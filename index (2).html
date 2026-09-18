@@ -1,0 +1,2059 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>JARVIS // Holographic Object Scanner</title>
+<style>
+  :root{
+    --bg:#02060a;
+    --panel:rgba(4,18,26,0.55);
+    --panel-border:rgba(60,200,255,0.35);
+    --blue:#39d9ff;
+    --blue-dim:#0f6b86;
+    --blue-bright:#c9f7ff;
+    --red:#ff3b4a;
+    --font:'Consolas','SFMono-Regular','Courier New',monospace;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{
+    margin:0; padding:0; width:100%; height:100%; overflow:hidden;
+    background:var(--bg); color:var(--blue-bright); font-family:var(--font);
+    user-select:none;
+  }
+  #boot{
+    position:fixed; inset:0; background:#000; color:var(--blue);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    z-index:999; letter-spacing:2px; cursor:pointer;
+  }
+  #boot .line{ font-size:13px; opacity:0; margin:4px 0; text-shadow:0 0 8px var(--blue); }
+  #boot .line.show{ animation:flicker .4s steps(2) forwards; }
+  #boot .skip{ position:absolute; bottom:24px; font-size:10px; color:var(--blue-dim); }
+  @keyframes flicker{ 0%{opacity:0;} 40%{opacity:1;} 60%{opacity:.4;} 100%{opacity:1;} }
+
+  #app{ position:fixed; inset:0; display:flex; flex-direction:column; }
+  .grid-bg{
+    position:fixed; inset:0; z-index:0; pointer-events:none;
+    background-image:
+      linear-gradient(rgba(20,180,220,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(20,180,220,0.06) 1px, transparent 1px);
+    background-size:34px 34px;
+    -webkit-mask-image:radial-gradient(ellipse at center, black 40%, transparent 85%);
+            mask-image:radial-gradient(ellipse at center, black 40%, transparent 85%);
+  }
+  .vignette{ position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.85) 100%); }
+
+  header{
+    position:relative; z-index:2; display:flex; align-items:center; justify-content:space-between;
+    padding:10px 18px; border-bottom:1px solid var(--panel-border);
+    background:linear-gradient(rgba(5,25,32,.6), transparent);
+  }
+  header .brand{ font-size:14px; letter-spacing:4px; color:var(--blue-bright); text-shadow:0 0 10px var(--blue); }
+  header .brand span{ color:var(--blue-dim); font-size:10px; letter-spacing:2px; display:block; margin-top:2px; }
+  header .status{ font-size:10px; letter-spacing:2px; color:var(--blue); display:flex; align-items:center; gap:8px; }
+  .dot{ width:6px; height:6px; border-radius:50%; background:var(--blue); box-shadow:0 0 8px var(--blue); animation:pulse 1.6s infinite; }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:.25;} }
+
+  main{ position:relative; z-index:2; flex:1; display:grid; grid-template-columns:220px 1fr 260px; gap:10px; padding:10px 14px; min-height:0; }
+  @media (max-width:900px){ main{ grid-template-columns:1fr; grid-template-rows:auto 1fr auto; } .panel.left,.panel.right{ max-height:140px; } }
+
+  .panel{
+    background:var(--panel); border:1px solid var(--panel-border); border-radius:2px;
+    padding:10px 12px; overflow-y:auto; min-height:0;
+    box-shadow:inset 0 0 30px rgba(20,150,200,.06);
+  }
+  .panel h3{ margin:0 0 8px; font-size:10px; letter-spacing:3px; color:var(--blue-dim); font-weight:400;
+    border-bottom:1px solid var(--panel-border); padding-bottom:6px; }
+  .panel::-webkit-scrollbar{ width:4px; }
+  .panel::-webkit-scrollbar-thumb{ background:var(--blue-dim); }
+
+  #objectOverview{ font-size:11px; line-height:1.6; color:var(--blue-bright); opacity:.9; }
+  .part-item{
+    padding:7px 8px; margin-bottom:4px; font-size:11px; letter-spacing:1px; cursor:pointer;
+    border-left:2px solid var(--blue-dim); color:var(--blue); transition:all .15s;
+  }
+  .part-item:hover{ background:rgba(57,217,255,.08); color:var(--blue-bright); }
+  .part-item.active{ border-left-color:var(--blue); background:rgba(57,217,255,.14); color:var(--blue-bright); text-shadow:0 0 6px var(--blue); }
+  .part-item .idx{ color:var(--blue-dim); margin-right:6px; }
+
+  #detailName{ font-size:14px; letter-spacing:2px; color:var(--blue-bright); text-shadow:0 0 8px var(--blue); margin:0 0 8px; }
+  #detailBody{ font-size:11px; line-height:1.7; color:var(--blue); min-height:60px; }
+  #detailBody b{ color:var(--blue-bright); font-weight:400; }
+  .field-label{ font-size:9px; letter-spacing:2px; color:var(--blue-dim); margin-top:10px; }
+
+  .viewport{
+    position:relative; overflow:hidden; border:1px solid var(--panel-border); border-radius:2px;
+    display:flex; align-items:center; justify-content:center; min-height:0;
+    background:radial-gradient(ellipse at center, rgba(10,40,55,.25), rgba(0,0,0,.4));
+  }
+  .corner{ position:absolute; width:22px; height:22px; border-color:var(--blue); opacity:.8; z-index:3; }
+  .corner.tl{ top:6px; left:6px; border-top:2px solid; border-left:2px solid; }
+  .corner.tr{ top:6px; right:6px; border-top:2px solid; border-right:2px solid; }
+  .corner.bl{ bottom:6px; left:6px; border-bottom:2px solid; border-left:2px solid; }
+  .corner.br{ bottom:6px; right:6px; border-bottom:2px solid; border-right:2px solid; }
+
+  #emptyState{ text-align:center; color:var(--blue-dim); font-size:11px; letter-spacing:2px; cursor:pointer; padding:30px; }
+  #emptyState .icon{ font-size:34px; margin-bottom:12px; opacity:.6; }
+  #emptyState.hidden{ display:none; }
+
+  /* holographic "matter" readout — the search result text projected
+     directly into the scan viewport, not just the side panel */
+  #matterPanel{
+    position:absolute; left:50%; bottom:14px; transform:translateX(-50%);
+    width:min(88%, 460px); max-height:42%; overflow-y:auto;
+    background:rgba(2,14,20,.68); border:1px solid var(--panel-border); border-radius:2px;
+    padding:10px 14px; font-size:11px; line-height:1.65; color:var(--blue);
+    box-shadow:0 0 22px rgba(57,217,255,.12), inset 0 0 20px rgba(20,150,200,.08);
+    z-index:4; pointer-events:auto; text-shadow:0 0 4px rgba(57,217,255,.25);
+  }
+  #matterPanel.hidden{ display:none; }
+  #matterPanel .mtag{ font-size:9px; letter-spacing:3px; color:var(--blue-dim); margin-bottom:6px; }
+  #matterPanel b{ color:var(--blue-bright); font-weight:400; }
+  #matterPanel::-webkit-scrollbar{ width:4px; }
+  #matterPanel::-webkit-scrollbar-thumb{ background:var(--blue-dim); }
+
+  #zoomLayer{ width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
+  #stage{ position:relative; touch-action:none; cursor:grab; transform-style:preserve-3d; will-change:transform; }
+  #stage.dragging{ cursor:grabbing; }
+  #imgWrap{ position:relative; display:inline-block; transform-style:preserve-3d; }
+  .holo-glow{ position:absolute; inset:0; pointer-events:none; background-repeat:no-repeat; background-size:100% 100%;
+    transform:translateZ(-70px) scale(1.14); filter:blur(7px) drop-shadow(0 0 18px rgba(57,217,255,.5)); opacity:.4; }
+  .holo-slice{ position:absolute; left:0; pointer-events:none; background-repeat:no-repeat;
+    box-shadow:inset 0 1px 0 rgba(120,230,255,.35); filter:drop-shadow(0 0 3px rgba(57,217,255,.35)); }
+
+  .scan-ring{ position:absolute; top:50%; left:50%; border:1px solid rgba(57,217,255,.35); border-radius:50%;
+    transform:translate(-50%,-50%); pointer-events:none; }
+  .scan-ring.r1{ width:112%; height:112%; animation:spin 14s linear infinite; border-style:dashed; }
+  .scan-ring.r2{ width:126%; height:126%; animation:spin 22s linear infinite reverse; }
+  @keyframes spin{ from{ transform:translate(-50%,-50%) rotate(0deg);} to{ transform:translate(-50%,-50%) rotate(360deg);} }
+  .scan-sweep{ position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+  .scan-sweep::after{ content:''; position:absolute; left:0; top:-100%; width:100%; height:40%;
+    background:linear-gradient(rgba(57,217,255,0), rgba(57,217,255,.16), rgba(57,217,255,0));
+    animation:sweep 3.2s ease-in-out infinite; }
+  @keyframes sweep{ 0%{ top:-40%; } 100%{ top:100%; } }
+
+  #overlaySvg{ position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; }
+  .lline{ stroke:var(--blue); stroke-width:1; opacity:.65; fill:none; }
+  .marker{ fill:var(--blue); filter:drop-shadow(0 0 4px var(--blue)); }
+  .marker.sel{ fill:var(--blue-bright); }
+
+  .label{
+    position:absolute; font-size:9.5px; letter-spacing:1px; white-space:nowrap;
+    padding:2px 7px; border:1px solid var(--blue-dim); background:rgba(2,12,16,.7); color:var(--blue);
+    pointer-events:auto; cursor:pointer; transition:color .15s, border-color .15s;
+  }
+  .label:hover, .label.sel{ color:var(--blue-bright); border-color:var(--blue); text-shadow:0 0 6px var(--blue); }
+
+  #scanStatus{ position:absolute; bottom:8px; left:0; right:0; text-align:center; font-size:10px; letter-spacing:2px; color:var(--blue); z-index:4; }
+  #errorBox{ position:absolute; top:10px; left:50%; transform:translateX(-50%); background:rgba(30,0,0,.6); border:1px solid var(--red); color:#ffb3b8; font-size:10px; letter-spacing:1px; padding:6px 14px; display:none; z-index:5; }
+
+  footer{
+    position:relative; z-index:2; display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:10px 16px; border-top:1px solid var(--panel-border); background:linear-gradient(transparent, rgba(5,25,32,.6));
+  }
+  button{
+    font-family:var(--font); background:transparent; color:var(--blue); border:1px solid var(--blue-dim);
+    padding:8px 14px; font-size:10px; letter-spacing:2px; cursor:pointer; border-radius:2px; transition:all .15s;
+  }
+  button:hover{ border-color:var(--blue); color:var(--blue-bright); box-shadow:0 0 10px rgba(57,217,255,.25); }
+  button.active{ background:rgba(57,217,255,.15); color:var(--blue-bright); border-color:var(--blue); }
+  button:disabled{ opacity:.35; cursor:default; }
+  .hint{ margin-left:auto; font-size:9px; letter-spacing:1.5px; color:var(--blue-dim); }
+  @media (max-width:700px){ .hint{ display:none; } }
+
+  .search-row{ position:relative; z-index:2; display:flex; gap:8px; padding:10px 16px;
+    border-bottom:1px solid var(--panel-border); background:linear-gradient(rgba(5,25,32,.4), transparent); }
+  #searchForm{ display:flex; gap:8px; width:100%; }
+  #searchInput{ flex:1; background:rgba(4,18,26,.5); border:1px solid var(--panel-border); color:var(--blue-bright);
+    font-family:var(--font); font-size:12px; letter-spacing:1px; padding:8px 10px; border-radius:2px; outline:none; }
+  #searchInput::placeholder{ color:var(--blue-dim); }
+  #searchInput:focus{ border-color:var(--blue); box-shadow:0 0 8px rgba(57,217,255,.25); }
+
+  #personCard{ max-width:480px; margin:auto; padding:22px 28px; text-align:left; display:flex; flex-direction:column; }
+  #personCard.hidden{ display:none; }
+  #personCard .ptag{ font-size:9px; letter-spacing:3px; color:var(--blue-dim); margin-bottom:10px; }
+  #personCard .pname{ font-size:16px; letter-spacing:3px; color:var(--blue-bright); text-shadow:0 0 10px var(--blue); margin-bottom:12px; }
+  #personCard .psummary{ font-size:12px; line-height:1.75; color:var(--blue); margin-bottom:16px; }
+  #personCard .pnote{ font-size:9px; letter-spacing:1px; line-height:1.6; color:var(--blue-dim); border-top:1px solid var(--panel-border); padding-top:10px; }
+  .pwiki{ display:inline-block; align-self:flex-start; font-size:10px; letter-spacing:1.5px; color:var(--blue);
+    border:1px solid var(--blue-dim); padding:6px 12px; margin-bottom:16px; text-decoration:none; transition:all .15s; }
+  .pwiki:hover{ color:var(--blue-bright); border-color:var(--blue); box-shadow:0 0 10px rgba(57,217,255,.25); }
+
+  #answerCard{ max-width:560px; width:92%; max-height:100%; margin:auto; padding:20px 26px; text-align:left;
+    display:flex; flex-direction:column; overflow-y:auto; }
+  #answerCard.hidden{ display:none; }
+  #answerCard .atag{ font-size:9px; letter-spacing:3px; color:var(--blue-dim); margin-bottom:10px; }
+  #answerCard .aquery{ font-size:15px; letter-spacing:2px; color:var(--blue-bright); text-shadow:0 0 10px var(--blue); margin-bottom:12px; }
+  #answerCard .aanswer{ font-size:12px; line-height:1.75; color:var(--blue); margin-bottom:16px; white-space:pre-wrap; }
+  #answerCard .aimages{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+  #answerCard .aimages img{ width:110px; height:80px; object-fit:cover; border:1px solid var(--panel-border); border-radius:2px; filter:none; }
+  #answerCard .avideo iframe{ width:100%; aspect-ratio:16/9; border:1px solid var(--panel-border); border-radius:2px; }
+  #answerCard .avideo-title{ font-size:9.5px; letter-spacing:1.5px; color:var(--blue-dim); margin-bottom:6px; }
+  #answerCard .avideo a{ color:var(--blue); font-size:10px; letter-spacing:1px; }
+  #answerCard .aloading{ font-size:9px; letter-spacing:1.5px; color:var(--blue-dim); }
+  /* plain photograph for confirmed real people — deliberately NO hologram
+     filter, NO glow, NO scan rings/sweep, just the image itself */
+  #personPhotoWrap{ align-self:center; margin-bottom:14px; }
+  #personPhotoWrap img{ display:block; max-width:220px; max-height:220px; width:auto; height:auto;
+    border:1px solid var(--panel-border); border-radius:2px; filter:none; box-shadow:none; }
+  #personPhotoStatus{ font-size:9px; letter-spacing:2px; color:var(--blue-dim); text-align:center; margin-bottom:10px; }
+
+  .holo-glow.raw{ filter: blur(7px) drop-shadow(0 0 18px rgba(57,217,255,.5)) grayscale(1) contrast(1.3) brightness(1.1) sepia(1) hue-rotate(150deg) saturate(4); }
+  .holo-slice.raw{ filter: drop-shadow(0 0 3px rgba(57,217,255,.35)) grayscale(1) contrast(1.3) brightness(1.1) sepia(1) hue-rotate(150deg) saturate(4); }
+
+  #camPreview{ position:absolute; bottom:44px; right:10px; width:150px; height:110px; border:1px solid var(--blue);
+    background:#000; z-index:6; overflow:hidden; }
+  #camPreview canvas{ width:100%; height:100%; filter:grayscale(1) contrast(1.3) brightness(1.1) sepia(1) hue-rotate(150deg) saturate(4); }
+  #camPreview .lbl{ position:absolute; top:2px; left:4px; font-size:8px; letter-spacing:1px; color:var(--blue-bright); text-shadow:0 0 4px #000; }
+  #camPreview .cline{ position:absolute; top:50%; left:0; width:100%; height:1px; background:rgba(57,217,255,.4); }
+</style>
+</head>
+<body>
+
+<div id="boot">
+  <div class="line" data-t="SYSTEM INITIALIZING...">SYSTEM INITIALIZING...</div>
+  <div class="line" data-t="CALIBRATING OPTICAL SENSORS...">CALIBRATING OPTICAL SENSORS...</div>
+  <div class="line" data-t="LOADING SCHEMATIC DATABASE...">LOADING SCHEMATIC DATABASE...</div>
+  <div class="line" data-t="GESTURE INPUT: STANDBY">GESTURE INPUT: STANDBY</div>
+  <div class="line" data-t="JARVIS HUD READY">JARVIS HUD READY</div>
+  <div class="skip">CLICK TO CONTINUE</div>
+</div>
+
+<div id="app">
+  <div class="grid-bg"></div>
+  <div class="vignette"></div>
+
+  <header>
+    <div class="brand">J A R V I S<span>HOLOGRAPHIC OBJECT SCANNER</span></div>
+    <div class="status"><span class="dot"></span><span id="statusText">STANDBY</span></div>
+  </header>
+
+  <div class="search-row">
+    <form id="searchForm">
+      <input type="text" id="searchInput" autocomplete="off" placeholder="SEARCH: a thing, a person, or ask any question...">
+      <button type="submit" id="searchBtn">SEARCH</button>
+    </form>
+  </div>
+
+  <main>
+    <aside class="panel left">
+      <h3>OVERVIEW</h3>
+      <div id="objectOverview">No object scanned. Upload an image, or search a thing, a person, or any question.</div>
+    </aside>
+
+    <div class="viewport" id="viewport">
+      <div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
+      <div id="emptyState">
+        <div class="icon">&#9678;</div>
+        CLICK OR DROP AN IMAGE, A 3D MODEL, OR A .ZIP/.RAR/.7Z ARCHIVE TO SCAN
+      </div>
+      <div id="personCard" class="hidden">
+        <div class="ptag">IDENTITY CONFIRMED &mdash; FACTUAL MODE</div>
+        <div id="personPhotoWrap" hidden><img id="personPhoto" alt=""></div>
+        <div id="personPhotoStatus"></div>
+        <div class="pname" id="personName"></div>
+        <div class="psummary" id="personSummary"></div>
+        <a id="personWikiLink" class="pwiki" target="_blank" rel="noopener noreferrer" hidden></a>
+        <div class="pnote">SCHEMATIC / COMPONENT ANALYSIS IS NOT PERFORMED ON REAL PEOPLE. JARVIS RETURNED A VERIFIED FACTUAL SUMMARY INSTEAD OF SIMULATED INTERNAL DATA.</div>
+      </div>
+      <div id="answerCard" class="hidden">
+        <div class="atag">SEARCH RESULT</div>
+        <div class="aquery" id="answerQuery"></div>
+        <div class="aanswer" id="answerText"></div>
+        <div class="aimages" id="answerImages"></div>
+        <div class="avideo" id="answerVideo"></div>
+      </div>
+      <div id="zoomLayer" style="display:none;">
+        <div id="stage">
+          <div id="imgWrap"></div>
+          <div class="scan-sweep"></div>
+          <div class="scan-ring r1"></div>
+          <div class="scan-ring r2"></div>
+          <svg id="overlaySvg"></svg>
+        </div>
+      </div>
+      <div id="matterPanel" class="hidden">
+        <div class="mtag">SCAN DATA</div>
+        <div id="matterBody"></div>
+      </div>
+      <div id="errorBox"></div>
+      <div id="scanStatus"></div>
+      <div id="camPreview" hidden>
+        <canvas id="camPreviewCanvas" width="150" height="110"></canvas>
+        <div class="lbl">GESTURE CAM</div>
+        <div class="cline"></div>
+      </div>
+    </div>
+
+    <aside class="panel right">
+      <h3 id="partsHeader">COMPONENTS</h3>
+      <div id="partsList" style="font-size:10px; color:var(--blue-dim);">— awaiting scan —</div>
+      <h3 style="margin-top:14px;" id="detailHeader">DETAIL</h3>
+      <div id="detailName"></div>
+      <div id="detailBody">Select a component to view its schematic detail.</div>
+    </aside>
+  </main>
+
+  <footer>
+    <button id="uploadBtn">&#8593; UPLOAD IMAGE / 3D MODEL / ARCHIVE</button>
+    <input type="file" id="fileInput" accept="image/*,.3ds,.obj,.stl,.fbx,.dae,.gltf,.glb,.zip,.rar,.7z" hidden>
+    <button id="explodeBtn" disabled>EXPLODE VIEW</button>
+    <button id="gestureBtn">ENABLE HAND GESTURE</button>
+    <button id="voiceBtn" class="active">VOICE: ON</button>
+    <button id="jarvisBtn">ENABLE JARVIS</button>
+    <button id="resetBtn" disabled>RESET</button>
+    <div class="hint">DRAG = SPIN 360&deg; &nbsp;|&nbsp; SCROLL/PINCH = ZOOM &nbsp;|&nbsp; FLICK = CYCLE PART &nbsp;|&nbsp; SEARCH A THING TO SCAN IT, A REAL PERSON FOR A WIKI-STYLE CARD, OR ASK ANY QUESTION FOR A DIRECT ANSWER &nbsp;|&nbsp; SAY "JARVIS" THEN YOUR QUESTION TO SEARCH BY VOICE &nbsp;|&nbsp; 3D MODELS (.3DS/.OBJ/.FBX/.GLB/.GLTF/.STL/.DAE) RENDER AS A TRUE ROTATING MESH &nbsp;|&nbsp; .ZIP/.RAR/.7Z: FIRST SUPPORTED FILE INSIDE IS SCANNED</div>
+  </footer>
+</div>
+
+<video id="camFeed" hidden playsinline muted></video>
+<canvas id="camCanvas" hidden></canvas>
+
+<!-- JSZip: used only for .zip archive uploads -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<!-- 3D engine for model uploads (.3ds/.obj/.stl/.fbx/.dae/.gltf/.glb).
+     three.js dropped its old global-variable build a while back, so this
+     pins "three" and every "three/addons/..." loader to ONE release — that's
+     what guarantees they all share a single THREE instance no matter which
+     combination gets imported. Nothing here is fetched at page load; it's
+     all pulled in on demand by loadThree()/loadAddon() further down, the
+     moment a model is actually uploaded. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/"
+  }
+}
+</script>
+
+<script>
+(function(){
+
+  var boot = document.getElementById('boot');
+  var lines = boot.querySelectorAll('.line');
+  var d = 200;
+  lines.forEach(function(l,i){ setTimeout(function(){ l.classList.add('show'); }, d*i + 150); });
+  var doneTimer = setTimeout(finishBoot, d*lines.length + 900);
+  boot.addEventListener('click', finishBoot);
+  function finishBoot(){
+    clearTimeout(doneTimer);
+    boot.style.transition='opacity .4s';
+    boot.style.opacity='0';
+    setTimeout(function(){ boot.style.display='none'; }, 400);
+  }
+
+  var els = {
+    uploadBtn: document.getElementById('uploadBtn'),
+    fileInput: document.getElementById('fileInput'),
+    explodeBtn: document.getElementById('explodeBtn'),
+    gestureBtn: document.getElementById('gestureBtn'),
+    voiceBtn: document.getElementById('voiceBtn'),
+    jarvisBtn: document.getElementById('jarvisBtn'),
+    resetBtn: document.getElementById('resetBtn'),
+    viewport: document.getElementById('viewport'),
+    emptyState: document.getElementById('emptyState'),
+    zoomLayer: document.getElementById('zoomLayer'),
+    stage: document.getElementById('stage'),
+    imgWrap: document.getElementById('imgWrap'),
+    svg: document.getElementById('overlaySvg'),
+    statusText: document.getElementById('statusText'),
+    scanStatus: document.getElementById('scanStatus'),
+    errorBox: document.getElementById('errorBox'),
+    overview: document.getElementById('objectOverview'),
+    partsList: document.getElementById('partsList'),
+    partsHeader: document.getElementById('partsHeader'),
+    detailName: document.getElementById('detailName'),
+    detailBody: document.getElementById('detailBody'),
+    camPreview: document.getElementById('camPreview'),
+    camFeed: document.getElementById('camFeed'),
+    camCanvas: document.getElementById('camCanvas'),
+    camPreviewCanvas: document.getElementById('camPreviewCanvas'),
+    searchForm: document.getElementById('searchForm'),
+    searchInput: document.getElementById('searchInput'),
+    searchBtn: document.getElementById('searchBtn'),
+    personCard: document.getElementById('personCard'),
+    personName: document.getElementById('personName'),
+    personSummary: document.getElementById('personSummary'),
+    personPhotoWrap: document.getElementById('personPhotoWrap'),
+    personPhoto: document.getElementById('personPhoto'),
+    personPhotoStatus: document.getElementById('personPhotoStatus'),
+    personWikiLink: document.getElementById('personWikiLink'),
+    matterPanel: document.getElementById('matterPanel'),
+    matterBody: document.getElementById('matterBody'),
+    answerCard: document.getElementById('answerCard'),
+    answerQuery: document.getElementById('answerQuery'),
+    answerText: document.getElementById('answerText'),
+    answerImages: document.getElementById('answerImages'),
+    answerVideo: document.getElementById('answerVideo')
+  };
+
+  var state = {
+    parts: [], selected: -1, exploded: false, holoSlices: [],
+    rotX:0, rotY:0, scale:1,
+    dragging:false, dragStart:null, dragMoved:false,
+    lastPointer:null, gestureOn:false,
+    mode:'image', // 'image' = 2D-slice hologram illusion, 'model' = real rendered .3ds mesh
+    archiveNote:null // set when the current scan came from inside a .zip/.rar
+  };
+
+  // holds the live Three.js scene/camera/renderer/mesh while a 3D model is
+  // loaded; torn down and nulled out whenever we leave model mode. dracoLoader/
+  // ktx2Loader are only ever populated for a compressed glTF/glb (see
+  // parseModelBuffer) and get disposed alongside the renderer so their decode
+  // workers don't pile up across multiple model uploads in one session.
+  var modelState = { renderer:null, scene:null, camera:null, group:null, baseDist:1, dracoLoader:null, ktx2Loader:null };
+  var MODEL_EXTS = ['3ds','obj','stl','fbx','dae','gltf','glb'];
+
+  function setStatus(t){ els.statusText.textContent = t; }
+
+  // toggles between the three mutually-exclusive viewport states: the
+  // upload prompt, the rotating hologram, and the real-person fact card.
+  // 'loading' hides all three while scanStatus shows progress text.
+  function showViewportMode(mode){
+    els.emptyState.classList.toggle('hidden', mode !== 'empty');
+    els.zoomLayer.style.display = (mode === 'image') ? 'flex' : 'none';
+    els.personCard.classList.toggle('hidden', mode !== 'person');
+    els.answerCard.classList.toggle('hidden', mode !== 'answer');
+    if(mode !== 'image') els.matterPanel.classList.add('hidden');
+  }
+
+  function friendlyApiError(err, contextLabel){
+    if(err && err.message === 'API_ERROR'){
+      return 'API ERROR ' + err.status + ' — this app must run inside the Claude chat preview to reach the API; a downloaded file opened on its own cannot authenticate.';
+    }
+    if(err && err.isNetworkError){
+      return 'NETWORK BLOCKED — the API call could not be sent. If you opened this file directly (not inside the Claude chat preview), the browser blocks it. Re-open it from the chat.';
+    }
+    if(err && err.message === 'PARSE_ERROR'){
+      return 'RESPONSE COULD NOT BE READ — the model replied but not in the expected format. Check the browser console for the raw text, then retry.';
+    }
+    if(err && err.message === 'NO_IMAGE'){
+      return 'NO IMAGE FOUND — try a more specific or well-known object name.';
+    }
+    if(err && err.message === 'NO_PARTS'){
+      return 'NO COMPONENTS IDENTIFIED — try a clearer, closer, or better-lit image of the object.';
+    }
+    return (contextLabel || 'REQUEST') + ' FAILED — see browser console for details, then retry.';
+  }
+
+  // generic Anthropic Messages API caller: sends content blocks (+ optional
+  // server-side tools like web_search), concatenates all returned text
+  // blocks, strips markdown fences, and parses as JSON.
+  function callClaude(opts, onDone){
+    var body = { model:'claude-sonnet-4-6', max_tokens: opts.maxTokens || 1200, messages:[{ role:'user', content: opts.content }] };
+    if(opts.tools) body.tools = opts.tools;
+    fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body)
+    }).catch(function(networkErr){
+      networkErr.isNetworkError = true; throw networkErr;
+    }).then(function(r){
+      if(!r.ok){
+        return r.text().then(function(bodyText){
+          var e = new Error('API_ERROR'); e.status = r.status; e.body = bodyText; throw e;
+        });
+      }
+      return r.json();
+    }).then(function(data){
+      var textBlock = (data.content || []).map(function(c){ return c.type==='text' ? c.text : ''; }).join('');
+      if(!textBlock){ var e = new Error('EMPTY_RESPONSE'); e.raw = JSON.stringify(data); throw e; }
+      var clean = textBlock.replace(/```json/g,'').replace(/```/g,'').trim();
+      var parsed;
+      try{ parsed = JSON.parse(clean); }
+      catch(parseErr){
+        // when web search is used the model sometimes wraps the JSON in a
+        // sentence or two of commentary despite instructions — salvage the
+        // first balanced {...} object instead of failing outright.
+        var match = clean.match(/\{[\s\S]*\}/);
+        if(match){
+          try{ parsed = JSON.parse(match[0]); }
+          catch(e2){ var e3 = new Error('PARSE_ERROR'); e3.raw = textBlock; throw e3; }
+        } else {
+          var e4 = new Error('PARSE_ERROR'); e4.raw = textBlock; throw e4;
+        }
+      }
+      onDone(null, parsed);
+    }).catch(function(err){
+      console.error('JARVIS API error:', err, err && err.status, err && (err.body||err.raw));
+      onDone(err);
+    });
+  }
+
+  function showError(msg){
+    els.errorBox.textContent = msg;
+    els.errorBox.style.display = 'block';
+    setTimeout(function(){ els.errorBox.style.display='none'; }, 4200);
+  }
+
+  // ---------- voice narration (JARVIS-style) ----------
+  var voiceState = { enabled:true, voice:null };
+  var hasSpeech = !!window.speechSynthesis;
+
+  // shared with the "talk to Jarvis" wake-word listener further down —
+  // declared here because speakNarration needs to flip `speaking` so the
+  // mic never reacts to Jarvis's own voice coming out of the speakers
+  var jarvisState = {
+    active: false,      // true only once the mic is actually confirmed listening (see onstart below)
+    starting: false,    // true while start() has been called but we're still waiting on the permission prompt / engine spin-up
+    recognition: null,  // the live SpeechRecognition instance
+    awaiting: false,    // wake word heard; now waiting for the question itself
+    awaitTimer: null,   // cancels "awaiting" if no question follows in time
+    speaking: false      // true while narration is playing
+  };
+
+  function pickNarrationVoice(){
+    if(!hasSpeech) return null;
+    var voices = window.speechSynthesis.getVoices();
+    if(!voices.length) return null;
+    return voices.find(function(v){ return /Daniel|Google UK English Male|Microsoft (Ryan|Guy|David)/i.test(v.name); })
+        || voices.find(function(v){ return /en-GB/i.test(v.lang) && /male/i.test(v.name); })
+        || voices.find(function(v){ return /en-GB/i.test(v.lang); })
+        || voices.find(function(v){ return /^en/i.test(v.lang); })
+        || voices[0];
+  }
+  if(hasSpeech){
+    voiceState.voice = pickNarrationVoice();
+    window.speechSynthesis.onvoiceschanged = function(){ voiceState.voice = pickNarrationVoice(); };
+  }
+
+  function speakNarration(text){
+    if(!voiceState.enabled || !hasSpeech || !text) return;
+    window.speechSynthesis.cancel();
+    var utter = new SpeechSynthesisUtterance(text);
+    if(voiceState.voice) utter.voice = voiceState.voice;
+    utter.rate = 0.95;
+    utter.pitch = 0.75;
+    utter.volume = 1;
+    // Jarvis's own narration plays through the speakers, which the wake-word
+    // mic (if it's on) would otherwise pick right back up — mute it for the
+    // duration, with a small tail after onend for the audio hardware's own
+    // buffering delay
+    jarvisState.speaking = true;
+    utter.onend = function(){ setTimeout(function(){ jarvisState.speaking = false; }, 400); };
+    utter.onerror = function(){ setTimeout(function(){ jarvisState.speaking = false; }, 400); };
+    window.speechSynthesis.speak(utter);
+  }
+  function stopNarration(){ if(hasSpeech) window.speechSynthesis.cancel(); }
+
+  function buildScanNarration(parsed){
+    var name = parsed.object_name || 'an unidentified object';
+    var overview = parsed.overview || '';
+    var partNames = (parsed.parts||[]).map(function(p){ return p && p.name; }).filter(Boolean);
+    var text = 'Scan complete. This appears to be ' + name + '. ' + overview;
+    if(partNames.length){
+      text += ' I have identified ' + partNames.length + ' components: ' + partNames.join(', ') + '.';
+    }
+    return text;
+  }
+
+  els.voiceBtn.addEventListener('click', function(){
+    voiceState.enabled = !voiceState.enabled;
+    els.voiceBtn.textContent = 'VOICE: ' + (voiceState.enabled ? 'ON' : 'OFF');
+    els.voiceBtn.classList.toggle('active', voiceState.enabled);
+    if(!voiceState.enabled) stopNarration();
+  });
+  if(!hasSpeech){
+    els.voiceBtn.disabled = true;
+    els.voiceBtn.textContent = 'VOICE UNAVAILABLE';
+  }
+
+  // ---------- talk to Jarvis: wake-word voice search ----------
+  // Say "Jarvis" — either alone, or with your question in the same breath
+  // ("Jarvis, what is the B-2 Spirit Bomber") — and it's routed through the
+  // exact same performSearch() pipeline the search box uses. Same routing,
+  // same hologram, same explanation, same narration; voice is just another
+  // way to trigger it.
+  var SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var hasRecognition = !!SpeechRecognitionImpl;
+  var WAKE_WORD_RE = /\bjarvis\b[,:]?\s*/i;
+
+  els.jarvisBtn.addEventListener('click', function(){
+    if(jarvisState.active){ stopJarvisListening(); }
+    else if(!jarvisState.starting){ startJarvisListening(); }
+    // a click while starting===true (permission prompt still pending) is
+    // ignored on purpose — see the comment in startJarvisListening for why
+  });
+  if(!hasRecognition){
+    els.jarvisBtn.disabled = true;
+    els.jarvisBtn.textContent = 'JARVIS UNAVAILABLE';
+  }
+
+  function startJarvisListening(){
+    if(!hasRecognition){
+      showError('VOICE INPUT ISN\'T SUPPORTED IN THIS BROWSER — TRY CHROME, EDGE, OR SAFARI');
+      return;
+    }
+    if(jarvisState.starting || jarvisState.active) return; // already running or already waiting on the permission prompt — a second click here must not cancel it
+
+    if(location.protocol === 'file:'){
+      console.warn('JARVIS: this page is open from a local file:// path. Some browsers don\'t remember microphone permission for file:// pages the way they do for a real http/https address, and will re-prompt every time. If the permission prompt keeps reappearing no matter what you allow, try opening this file through a real web address instead of double-clicking it.');
+    }
+
+    jarvisState.starting = true;
+    els.jarvisBtn.textContent = 'JARVIS: WAITING FOR MIC PERMISSION...';
+    setStatus('WAITING FOR MICROPHONE PERMISSION...');
+
+    // best-effort early warning if the browser already knows the mic is
+    // blocked — not universally supported (Safari especially), so this is
+    // purely advisory; the real outcome is still whatever start() below does
+    if(navigator.permissions && navigator.permissions.query){
+      navigator.permissions.query({ name:'microphone' }).then(function(status){
+        if(status.state === 'denied' && jarvisState.starting){
+          showError('MICROPHONE IS BLOCKED FOR THIS PAGE — ALLOW IT IN YOUR BROWSER\'S SITE SETTINGS, THEN RELOAD');
+        }
+      }).catch(function(){ /* permissions.query('microphone') isn't supported in every browser — fine, start() below is still the real check */ });
+    }
+
+    var recognition = new SpeechRecognitionImpl();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US'; // the whole UI is English-only, so this stays fixed rather than following navigator.language
+
+    recognition.onstart = function(){
+      // only fires once the browser has actually granted the mic and begun
+      // capturing — the clearest possible signal that permission is fine
+      jarvisState.starting = false;
+      jarvisState.active = true;
+      els.jarvisBtn.textContent = 'JARVIS: ON';
+      els.jarvisBtn.classList.add('active');
+      setStatus('STANDBY');
+    };
+
+    recognition.onresult = function(e){
+      if(jarvisState.speaking) return; // don't let Jarvis react to its own narration
+
+      var finalChunk = '';
+      for(var i = e.resultIndex; i < e.results.length; i++){
+        if(e.results[i].isFinal) finalChunk += e.results[i][0].transcript;
+      }
+      finalChunk = finalChunk.trim();
+      if(!finalChunk) return;
+
+      if(jarvisState.awaiting){
+        // wake word was already heard on its own; this whole utterance is the question
+        clearTimeout(jarvisState.awaitTimer);
+        jarvisState.awaiting = false;
+        submitJarvisQuery(finalChunk);
+        return;
+      }
+
+      var m = WAKE_WORD_RE.exec(finalChunk);
+      if(!m) return; // no wake word in this chunk — ordinary background speech, ignore
+
+      var after = finalChunk.slice(m.index + m[0].length).trim();
+      if(after.replace(/[^a-z0-9]/gi,'').length > 2){
+        // question came in the same breath as the wake word
+        submitJarvisQuery(after);
+      } else {
+        // wake word alone — prompt and give the question a few seconds to arrive
+        jarvisState.awaiting = true;
+        setStatus('JARVIS IS LISTENING...');
+        els.jarvisBtn.textContent = 'JARVIS: LISTENING...';
+        speakNarration('Yes?');
+        clearTimeout(jarvisState.awaitTimer);
+        jarvisState.awaitTimer = setTimeout(function(){
+          jarvisState.awaiting = false;
+          if(jarvisState.active){
+            els.jarvisBtn.textContent = 'JARVIS: ON';
+            setStatus('STANDBY');
+          }
+        }, 7000);
+      }
+    };
+
+    recognition.onerror = function(e){
+      console.error('JARVIS speech recognition error:', e.error);
+      if(e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+        // "not-allowed" is a broad security/privacy refusal, not necessarily
+        // "you clicked Deny" — it's also what fires when the page itself
+        // isn't loaded over a proper https:// (or http://localhost)
+        // address, or when the OS's own microphone privacy switch is off,
+        // in which case the browser's per-site permission is never even
+        // consulted. Point at whichever of those is actually most likely
+        // instead of always blaming site settings.
+        if(location.protocol === 'file:'){
+          showError('MIC BLOCKED — THIS FILE IS OPEN DIRECTLY (file://), WHICH BLOCKS VOICE INPUT IN MOST BROWSERS. OPEN IT VIA A REAL WEB ADDRESS INSTEAD');
+        } else if(location.protocol !== 'https:' && location.hostname !== 'localhost'){
+          showError('MIC BLOCKED — VOICE INPUT NEEDS HTTPS (THIS PAGE IS ' + location.protocol.toUpperCase() + ')');
+        } else {
+          showError('MICROPHONE ACCESS DENIED — CHECK BOTH YOUR BROWSER\'S SITE SETTINGS AND YOUR OPERATING SYSTEM\'S MICROPHONE PRIVACY SETTING, THEN RELOAD');
+        }
+        stopJarvisListening();
+      } else if(e.error === 'audio-capture'){
+        showError('NO MICROPHONE FOUND — TALKING TO JARVIS NEEDS ONE');
+        stopJarvisListening();
+      } else if(e.error !== 'no-speech' && e.error !== 'aborted'){
+        // no-speech (silence timeout) and aborted (a deliberate stop/restart)
+        // are routine and handled by onend below; anything else is
+        // unexpected, so at least surface it instead of failing silently
+        console.warn('JARVIS: unexpected recognition error "' + e.error + '" — will keep retrying');
+      }
+    };
+
+    recognition.onend = function(){
+      jarvisState.starting = false;
+      if(jarvisState.active){
+        // continuous mode still gets stopped by the browser after a while
+        // (long silence, backgrounded tab, etc.) — restart quietly to keep
+        // "always listening" going. The short delay avoids a known browser
+        // race where calling start() synchronously inside onend can throw
+        // because the engine hasn't fully reset yet.
+        setTimeout(function(){
+          if(jarvisState.active){
+            try{ recognition.start(); }catch(e){ /* a restart is already in flight — ignore */ }
+          }
+        }, 250);
+      }
+    };
+
+    jarvisState.recognition = recognition;
+    try{
+      recognition.start();
+    }catch(err){
+      console.error('JARVIS: failed to start speech recognition', err);
+      showError('COULD NOT START VOICE INPUT — CHECK MICROPHONE PERMISSIONS');
+      jarvisState.starting = false;
+      stopJarvisListening();
+    }
+  }
+
+  function stopJarvisListening(){
+    jarvisState.active = false;
+    jarvisState.starting = false;
+    jarvisState.awaiting = false;
+    clearTimeout(jarvisState.awaitTimer);
+    if(jarvisState.recognition){
+      // null these out first so the handlers above can't react to a stop we triggered on purpose
+      jarvisState.recognition.onend = null;
+      jarvisState.recognition.onstart = null;
+      try{ jarvisState.recognition.stop(); }catch(e){}
+      jarvisState.recognition = null;
+    }
+    els.jarvisBtn.textContent = hasRecognition ? 'ENABLE JARVIS' : 'JARVIS UNAVAILABLE';
+    els.jarvisBtn.classList.remove('active');
+  }
+
+  function submitJarvisQuery(query){
+    query = query.trim();
+    if(!query) return;
+    if(els.searchBtn.disabled){
+      // a search is already in flight — don't pile a second one on top of it
+      speakNarration('I\u2019m still working on the last one, one moment.');
+      return;
+    }
+    els.searchInput.value = query; // mirror what Jarvis heard into the visible search box
+    setStatus('JARVIS HEARD: "' + query.toUpperCase() + '"');
+    performSearch(query);
+  }
+
+  // ---------- upload ----------
+  els.emptyState.addEventListener('click', function(){ els.fileInput.click(); });
+  els.uploadBtn.addEventListener('click', function(){ els.fileInput.click(); });
+  els.fileInput.addEventListener('change', function(e){
+    if(e.target.files && e.target.files[0]) handleFile(e.target.files[0]);
+  });
+  els.viewport.addEventListener('dragover', function(e){ e.preventDefault(); });
+  els.viewport.addEventListener('drop', function(e){
+    e.preventDefault();
+    if(e.dataTransfer.files && e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  });
+
+  var MAX_UPLOAD_BYTES = 15 * 1024 * 1024; // 15MB
+  var MAX_MODEL_BYTES = 30 * 1024 * 1024; // 30MB — mesh files run larger than photos
+  var MAX_ARCHIVE_BYTES = 50 * 1024 * 1024; // 50MB
+  var IMAGE_EXTS = ['png','jpg','jpeg','gif','webp','bmp'];
+  var IMAGE_MIME = { png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif', webp:'image/webp', bmp:'image/bmp' };
+
+  function extOf(name){
+    var m = /\.([a-z0-9]+)$/i.exec(name || '');
+    return m ? m[1].toLowerCase() : '';
+  }
+
+  function handleFile(file){
+    var ext = extOf(file.name);
+    if(MODEL_EXTS.indexOf(ext) !== -1){ handleModelFile(file); return; }
+    if(ext === 'zip' || ext === 'rar' || ext === '7z'){ handleArchiveFile(file); return; }
+    if(!file.type.startsWith('image/')){ showError('FILE TYPE NOT SUPPORTED — USE AN IMAGE, A .3DS MODEL, OR A .ZIP/.RAR ARCHIVE'); return; }
+    if(file.size > MAX_UPLOAD_BYTES){ showError('IMAGE TOO LARGE — 15MB MAX'); return; }
+    stopNarration();
+    var reader = new FileReader();
+    reader.onerror = function(){ showError('COULD NOT READ IMAGE FILE'); };
+    reader.onload = function(ev){ startImageScan(ev.target.result); };
+    reader.readAsDataURL(file);
+  }
+
+  // shared entry point for any locally-sourced photo — a direct upload, a
+  // drag/drop, or an image pulled out of a .zip/.rar archive — so they all
+  // go through the exact same hologram + vision-analysis pipeline
+  function startImageScan(dataUrl, sourceLabel){
+    state.mode = 'image';
+    state.archiveNote = sourceLabel || null;
+    teardownModel();
+    showViewportMode('image');
+    els.resetBtn.disabled = false;
+    resetTransform();
+    clearAnalysis();
+    buildHologram(dataUrl);
+    analyzeImage(dataUrl);
+  }
+
+  // ---------- true 3D model path (.3ds/.obj/.stl/.fbx/.dae/.gltf/.glb) ----------
+  function handleModelFile(file){
+    if(file.size > MAX_MODEL_BYTES){ showError('MODEL TOO LARGE — 30MB MAX'); return; }
+    stopNarration();
+    var ext = extOf(file.name);
+    var reader = new FileReader();
+    reader.onerror = function(){ showError('COULD NOT READ MODEL FILE'); };
+    reader.onload = function(ev){ startModelScan(ext, ev.target.result); };
+    reader.readAsArrayBuffer(file);
+  }
+
+  // three.js no longer ships a global-variable build, so the engine is
+  // loaded as ES modules instead — and lazily: nothing below is fetched
+  // until someone actually uploads a model. Both caches only ever store a
+  // *successful* load (mirroring loadArchiveLib's pattern above) — a
+  // transient network blip must not permanently poison retries the way
+  // caching a rejected promise would.
+  var THREE_VERSION = '0.185.1'; // keep in sync with the importmap in <head>
+  var THREE_CDN = 'https://cdn.jsdelivr.net/npm/three@' + THREE_VERSION;
+
+  var _three = null;
+  function loadThree(){
+    if(_three) return Promise.resolve(_three);
+    return import('three').then(function(m){ _three = m; return m; }, function(e){
+      console.error('JARVIS: three.js core failed to load:', e);
+      throw new Error('ENGINE_LOAD_FAILED');
+    });
+  }
+
+  var _addons = {};
+  function loadAddon(addonPath){ // addonPath e.g. 'loaders/STLLoader.js'
+    if(_addons[addonPath]) return Promise.resolve(_addons[addonPath]);
+    return import('three/addons/' + addonPath).then(function(m){ _addons[addonPath] = m; return m; }, function(e){
+      console.error('JARVIS: failed to load 3D loader module', addonPath, e);
+      throw new Error('LOADER_MISSING');
+    });
+  }
+  // Draco/KTX2/Meshopt are only needed for a *compressed* glTF/glb — most
+  // aren't — so a plain file should still open even if the CDN can't serve
+  // one of these extras right now; hence resolve(null) instead of rejecting.
+  function loadOptionalAddon(addonPath){
+    return loadAddon(addonPath).then(function(m){ return m; }, function(){ return null; });
+  }
+
+  // parses a raw model buffer with the right loader for its extension and
+  // resolves to a THREE.Group ready to drop into a scene. Always returns a
+  // Promise — some loaders (glTF) are async by nature, so every format is
+  // normalized to that shape for one code path. `renderer` is only used by
+  // the gltf/glb branch, to detect which compressed-texture formats the GPU
+  // can decode directly (KTX2/Basis).
+  function parseModelBuffer(ext, arrayBuffer, renderer){
+    switch(ext){
+
+      case '3ds':
+        return Promise.all([ loadThree(), loadAddon('loaders/TDSLoader.js') ]).then(function(mods){
+          return new mods[1].TDSLoader().parse(arrayBuffer, '');
+        });
+
+      case 'stl':
+        return Promise.all([ loadThree(), loadAddon('loaders/STLLoader.js') ]).then(function(mods){
+          var THREE = mods[0];
+          var geometry = new mods[1].STLLoader().parse(arrayBuffer);
+          var mesh = new THREE.Mesh(geometry);
+          var group = new THREE.Group(); group.add(mesh);
+          return group;
+        });
+
+      case 'fbx':
+        return Promise.all([ loadThree(), loadAddon('loaders/FBXLoader.js') ]).then(function(mods){
+          return new mods[1].FBXLoader().parse(arrayBuffer, '');
+        });
+
+      case 'obj':
+        return Promise.all([ loadThree(), loadAddon('loaders/OBJLoader.js') ]).then(function(mods){
+          var text = new TextDecoder('utf-8').decode(new Uint8Array(arrayBuffer));
+          return new mods[1].OBJLoader().parse(text);
+        });
+
+      case 'dae':
+        return Promise.all([ loadThree(), loadAddon('loaders/ColladaLoader.js') ]).then(function(mods){
+          var text = new TextDecoder('utf-8').decode(new Uint8Array(arrayBuffer));
+          return new mods[1].ColladaLoader().parse(text, '').scene;
+        });
+
+      case 'gltf':
+      case 'glb':
+        // GLTFLoader auto-detects JSON text vs binary GLB from the buffer's
+        // own magic header, so one code path handles both extensions.
+        // GLTFLoader itself is required; the compression extensions below
+        // are best-effort extras (see loadOptionalAddon above).
+        return Promise.all([
+          loadThree(),
+          loadAddon('loaders/GLTFLoader.js'),
+          loadOptionalAddon('loaders/DRACOLoader.js'),
+          loadOptionalAddon('loaders/KTX2Loader.js'),
+          loadOptionalAddon('libs/meshopt_decoder.module.js')
+        ]).then(function(mods){
+          var GLTFLoader = mods[1].GLTFLoader, dracoMod = mods[2], ktx2Mod = mods[3], meshoptMod = mods[4];
+          var loader = new GLTFLoader();
+          var dracoLoader = null, ktx2Loader = null;
+
+          if(dracoMod){
+            dracoLoader = new dracoMod.DRACOLoader();
+            dracoLoader.setDecoderPath(THREE_CDN + '/examples/jsm/libs/draco/');
+            loader.setDRACOLoader(dracoLoader);
+          }
+          if(ktx2Mod && renderer){
+            ktx2Loader = new ktx2Mod.KTX2Loader();
+            ktx2Loader.setTranscoderPath(THREE_CDN + '/examples/jsm/libs/basis/');
+            ktx2Loader.detectSupport(renderer);
+            loader.setKTX2Loader(ktx2Loader);
+          }
+          if(meshoptMod){
+            loader.setMeshoptDecoder(meshoptMod.MeshoptDecoder);
+          }
+
+          return loader.parseAsync(arrayBuffer, '').then(function(gltf){
+            // stashed on the group (not modelState) so a failed/empty parse
+            // below can still dispose them — only a genuinely-accepted model
+            // hands them off to buildModelHologram for modelState/teardown
+            gltf.scene._jarvisDracoLoader = dracoLoader;
+            gltf.scene._jarvisKtx2Loader = ktx2Loader;
+            return gltf.scene;
+          }).catch(function(err){
+            if(dracoLoader) try{ dracoLoader.dispose(); }catch(e){}
+            if(ktx2Loader) try{ ktx2Loader.dispose(); }catch(e){}
+            throw err;
+          });
+        });
+
+      default:
+        return Promise.reject(new Error('UNSUPPORTED_MODEL_FORMAT'));
+    }
+  }
+
+  // bumped on every new upload; lets a slower, superseded load recognize
+  // it's stale once it finally resolves (see buildModelHologram) instead of
+  // clobbering whatever the user uploaded after it. Only really matters now
+  // that the first load in a session involves a real network fetch — before,
+  // loading was fast/synchronous enough that this race was academic.
+  var _modelGen = 0;
+
+  // shared entry point for any locally-sourced 3D mesh — a direct upload or
+  // one pulled out of a .zip/.rar/.7z archive
+  function startModelScan(ext, arrayBuffer, sourceLabel){
+    var myGen = ++_modelGen;
+    state.mode = 'model';
+    state.archiveNote = sourceLabel || null;
+    teardownModel(); // release any previously-loaded model's renderer/workers first
+    showViewportMode('image');
+    els.resetBtn.disabled = false;
+    resetTransform();
+    clearAnalysis();
+    els.explodeBtn.disabled = true; // no schematic explode for real 3D meshes
+    setStatus('SCANNING');
+    els.scanStatus.textContent = _three ? 'PARSING 3D MODEL...' : 'LOADING 3D ENGINE (FIRST USE)...';
+    buildModelHologram(ext, arrayBuffer, myGen).then(function(){
+      // hand a snapshot of the rendered mesh to the same vision pipeline the
+      // photo flow uses, so the side panels still get a name/overview/parts list
+      var snapshot = modelState.renderer.domElement.toDataURL('image/png');
+      analyzeImage(snapshot);
+    }).catch(function(parseErr){
+      if(parseErr && parseErr.message === 'STALE_LOAD') return; // superseded by a newer upload — that one already owns the UI
+      console.error('JARVIS model parse error:', parseErr);
+      var code = parseErr && parseErr.message;
+      var msg;
+      if(code === 'ENGINE_LOAD_FAILED'){
+        msg = '3D ENGINE FAILED TO LOAD — CHECK YOUR CONNECTION AND RETRY';
+      } else if(code === 'LOADER_MISSING'){
+        msg = 'THIS MODEL FORMAT\'S LOADER FAILED TO LOAD — CHECK YOUR CONNECTION AND RETRY';
+      } else if(code === 'EMPTY_MODEL'){
+        msg = 'MODEL PARSED BUT CONTAINS NO VISIBLE GEOMETRY';
+      } else if(code === 'UNSUPPORTED_MODEL_FORMAT'){
+        msg = 'UNSUPPORTED 3D MODEL FORMAT';
+      } else {
+        msg = '3D MODEL COULD NOT BE PARSED — IT MAY BE CORRUPT OR AN UNSUPPORTED VARIANT (SEE CONSOLE)';
+      }
+      showError(msg);
+      setStatus('SCAN FAILED');
+      showViewportMode('empty');
+    });
+  }
+
+  // ---------- .zip archive path (JSZip — plain JS, no WASM, no CDN bundler risk) ----------
+  function handleZipFile(file){
+    stopNarration();
+    showViewportMode('loading');
+    state.mode = 'image';
+    teardownModel();
+    clearAnalysis();
+    els.resetBtn.disabled = false;
+    setStatus('EXTRACTING');
+    els.scanStatus.textContent = 'READING ARCHIVE...';
+
+    if(!window.JSZip){
+      finishArchiveError(new Error('LIB_LOAD_FAILED'));
+      return;
+    }
+
+    JSZip.loadAsync(file).then(function(zip){
+      var entries = Object.keys(zip.files).map(function(k){ return zip.files[k]; })
+        .filter(function(e){ return !e.dir; });
+      var best = null;
+      for(var i=0; i<entries.length; i++){
+        var ext = extOf(entries[i].name);
+        if(MODEL_EXTS.indexOf(ext) !== -1 || IMAGE_EXTS.indexOf(ext) !== -1){
+          best = { entry: entries[i], name: entries[i].name, ext: ext };
+          break;
+        }
+      }
+      if(!best){ finishArchiveError(new Error('NO_SUPPORTED_ENTRY')); return; }
+      var sourceLabel = file.name + ' \u2192 ' + best.name;
+      if(MODEL_EXTS.indexOf(best.ext) !== -1){
+        best.entry.async('arraybuffer').then(function(buf){
+          startModelScan(best.ext, buf, sourceLabel);
+        }).catch(function(e){ finishArchiveError(e); });
+      } else {
+        best.entry.async('base64').then(function(b64){
+          var dataUrl = 'data:' + (IMAGE_MIME[best.ext] || 'application/octet-stream') + ';base64,' + b64;
+          startImageScan(dataUrl, sourceLabel);
+        }).catch(function(e){ finishArchiveError(e); });
+      }
+    }).catch(function(e){
+      console.error('JARVIS zip read failed:', e);
+      finishArchiveError(new Error('ARCHIVE_READ_FAILED'));
+    });
+  }
+
+  function finishArchiveError(err){
+    console.error('JARVIS archive error:', err);
+    setStatus('SCAN FAILED');
+    els.scanStatus.textContent = '';
+    showViewportMode('empty');
+    var reason = err && err.message;
+    if(reason === 'NO_SUPPORTED_ENTRY'){
+      showError('ARCHIVE OPENED FINE BUT HAD NO SUPPORTED FILE INSIDE — NEEDS AN IMAGE OR A 3D MODEL (.3DS/.OBJ/.FBX/.GLB/.GLTF/.STL/.DAE)');
+    } else if(reason === 'LIB_LOAD_FAILED'){
+      showError('ARCHIVE ENGINE FAILED TO LOAD — CHECK YOUR CONNECTION, OR AN AD-BLOCKER/FIREWALL MAY BE BLOCKING THE CDN. RETRY, OR EXTRACT LOCALLY AND UPLOAD THE FILE DIRECTLY');
+    } else if(reason === 'WASM_INIT_FAILED'){
+      showError('7Z/RAR ENGINE (WEBASSEMBLY) FAILED TO START IN THIS BROWSER — TRY RE-SAVING AS A .ZIP INSTEAD, OR EXTRACT LOCALLY AND UPLOAD THE MODEL/IMAGE FILE DIRECTLY');
+    } else if(reason === 'ARCHIVE_READ_FAILED'){
+      showError('ARCHIVE COULD NOT BE READ — ITS COMPRESSION METHOD MAY NOT BE SUPPORTED. TRY RE-SAVING AS A STANDARD .ZIP, OR EXTRACT LOCALLY AND UPLOAD THE FILE DIRECTLY');
+    } else {
+      showError('ARCHIVE COULD NOT BE OPENED — TRY EXTRACTING IT LOCALLY AND UPLOADING THE IMAGE/MODEL FILE DIRECTLY');
+    }
+  }
+
+  // ---------- .rar / .7z archive path (WebAssembly — more fragile in-browser) ----------
+  // any image or 3D model file found inside is extracted in-memory and
+  // handed to the exact same scan pipeline as a direct upload — nothing
+  // about the archive itself is ever "scanned"
+  var _archiveLib = null; // only cache on SUCCESS — a failed load must not poison future attempts
+  function loadArchiveLib(){
+    if(_archiveLib) return Promise.resolve(_archiveLib);
+    return import('https://cdn.jsdelivr.net/npm/libarchive-wasm/+esm').then(function(m){
+      _archiveLib = m;
+      return m;
+    }, function(e){
+      console.error('JARVIS archive lib failed to load:', e);
+      throw new Error('LIB_LOAD_FAILED');
+    });
+  }
+
+  function handleArchiveFile(file){
+    if(file.size > MAX_ARCHIVE_BYTES){ showError('ARCHIVE TOO LARGE — 50MB MAX'); return; }
+    var ext = extOf(file.name);
+    if(ext === 'zip'){ handleZipFile(file); return; }
+
+    stopNarration();
+    showViewportMode('loading');
+    state.mode = 'image';
+    teardownModel();
+    clearAnalysis();
+    els.resetBtn.disabled = false;
+    setStatus('EXTRACTING');
+    els.scanStatus.textContent = 'READING ARCHIVE...';
+
+    var mod, reader;
+    loadArchiveLib()
+      .then(function(m){ mod = m; return file.arrayBuffer(); })
+      .then(function(buf){
+        var wasmMod;
+        return mod.libarchiveWasm().catch(function(e){
+          console.error('JARVIS archive wasm init failed:', e);
+          throw new Error('WASM_INIT_FAILED');
+        }).then(function(w){
+          wasmMod = w;
+          var best = null, data = null;
+          try{
+            reader = new mod.ArchiveReader(wasmMod, new Uint8Array(buf));
+            // archive readers are forward-only streams, so we can't scan
+            // ahead and come back — grab the first supported file's data
+            // the moment we see it, in archive order
+            for(var entry of reader.entries()){
+              var name = entry.getPathname();
+              var ext2 = extOf(name);
+              if(MODEL_EXTS.indexOf(ext2) !== -1 || IMAGE_EXTS.indexOf(ext2) !== -1){
+                best = { name:name, ext:ext2 };
+                data = entry.readData(); // must read now, before the loop advances
+                break;
+              }
+            }
+          }catch(readErr){
+            console.error('JARVIS archive read/decompress failed:', readErr);
+            throw new Error('ARCHIVE_READ_FAILED');
+          }
+          if(!best) throw new Error('NO_SUPPORTED_ENTRY');
+          var sourceLabel = file.name + ' \u2192 ' + best.name;
+          if(MODEL_EXTS.indexOf(best.ext) !== -1){
+            var buf2 = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+            startModelScan(best.ext, buf2, sourceLabel);
+          } else {
+            var blob = new Blob([data], { type: IMAGE_MIME[best.ext] || 'application/octet-stream' });
+            var fr = new FileReader();
+            fr.onerror = function(){ showError('COULD NOT READ EXTRACTED IMAGE'); showViewportMode('empty'); setStatus('SCAN FAILED'); };
+            fr.onload = function(ev){ startImageScan(ev.target.result, sourceLabel); };
+            fr.readAsDataURL(blob);
+          }
+          try{ reader.free(); }catch(e){}
+        });
+      })
+      .catch(finishArchiveError);
+  }
+
+  function buildModelHologram(ext, arrayBuffer, myGen){
+    var maxW = Math.min(560, window.innerWidth * (window.innerWidth <= 900 ? 0.86 : 0.44));
+    var maxH = window.innerHeight * (window.innerWidth <= 900 ? 0.36 : 0.56);
+    var cw = Math.max(240, Math.round(maxW)), ch = Math.max(200, Math.round(maxH));
+
+    els.imgWrap.innerHTML = '';
+    els.imgWrap.style.width = cw + 'px';
+    els.imgWrap.style.height = ch + 'px';
+
+    var canvas = document.createElement('canvas');
+    canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.display = 'block';
+    els.imgWrap.appendChild(canvas);
+
+    return loadThree().then(function(THREE){
+      var renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true, preserveDrawingBuffer: true });
+      renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+      renderer.setSize(cw, ch, false);
+
+      var scene = new THREE.Scene();
+      var camera = new THREE.PerspectiveCamera(45, cw / ch, 0.1, 100);
+
+      return parseModelBuffer(ext, arrayBuffer, renderer).then(function(group){
+        if(myGen !== _modelGen){
+          // a newer upload started while this one was still loading — drop
+          // this result instead of clobbering (or racing) the current one
+          if(group && group._jarvisDracoLoader) try{ group._jarvisDracoLoader.dispose(); }catch(e){}
+          if(group && group._jarvisKtx2Loader) try{ group._jarvisKtx2Loader.dispose(); }catch(e){}
+          throw new Error('STALE_LOAD');
+        }
+        if(!group || !group.children || !group.children.length){
+          throw new Error('EMPTY_MODEL');
+        }
+
+        // recolor every mesh into the app's cyan hologram look and add a
+        // brighter wireframe pass on top so it reads as a scanned schematic
+        // rather than a lit, textured render
+        group.traverse(function(node){
+          if(node.isMesh){
+            node.material = new THREE.MeshBasicMaterial({
+              color: 0x39d9ff, transparent: true, opacity: 0.22,
+              side: THREE.DoubleSide, depthWrite: false
+            });
+            var wire = new THREE.LineSegments(
+              new THREE.EdgesGeometry(node.geometry, 20),
+              new THREE.LineBasicMaterial({ color: 0xc9f7ff, transparent: true, opacity: 0.85 })
+            );
+            node.add(wire);
+          }
+        });
+
+        // normalize position/scale so any model — regardless of its native
+        // units — fills the viewport consistently
+        var box = new THREE.Box3().setFromObject(group);
+        var size = box.getSize(new THREE.Vector3());
+        var center = box.getCenter(new THREE.Vector3());
+        group.position.sub(center);
+        var maxDim = Math.max(size.x, size.y, size.z) || 1;
+        var targetSize = 3.2;
+        group.scale.setScalar(targetSize / maxDim);
+
+        scene.add(group);
+
+        var baseDist = 6;
+        camera.position.set(0, 0, baseDist);
+        camera.lookAt(0, 0, 0);
+
+        modelState = {
+          renderer: renderer, scene: scene, camera: camera, group: group, baseDist: baseDist,
+          dracoLoader: group._jarvisDracoLoader || null, ktx2Loader: group._jarvisKtx2Loader || null
+        };
+        applyTransform();
+      }).catch(function(err){
+        // parsing failed (or came back empty) after the GL context was
+        // already created above — release it immediately. Without this,
+        // every bad upload in a row leaks a WebGL context, and browsers only
+        // allow a handful of live ones before *unrelated* renders start
+        // failing too.
+        try{ renderer.dispose(); }catch(e){}
+        try{ renderer.forceContextLoss(); }catch(e){}
+        throw err;
+      });
+    });
+  }
+
+  function teardownModel(){
+    if(modelState.renderer){
+      try{ modelState.renderer.dispose(); }catch(e){}
+      try{ modelState.renderer.forceContextLoss(); }catch(e){}
+    }
+    if(modelState.dracoLoader){ try{ modelState.dracoLoader.dispose(); }catch(e){} }
+    if(modelState.ktx2Loader){ try{ modelState.ktx2Loader.dispose(); }catch(e){} }
+    modelState = { renderer:null, scene:null, camera:null, group:null, baseDist:1, dracoLoader:null, ktx2Loader:null };
+  }
+
+  function buildHologram(src){
+    var im = new Image();
+    im.onerror = function(){
+      showError('IMAGE FAILED TO LOAD FROM SOURCE — TRY A DIFFERENT SEARCH TERM OR UPLOAD DIRECTLY');
+      setStatus('SCAN FAILED'); els.scanStatus.textContent = '';
+      showViewportMode('empty');
+      resetSearchButtons();
+    };
+    im.onload = function(){
+      var w = im.naturalWidth || im.width, h = im.naturalHeight || im.height;
+      var maxW = Math.min(560, window.innerWidth * (window.innerWidth <= 900 ? 0.86 : 0.44));
+      var maxH = window.innerHeight * (window.innerWidth <= 900 ? 0.36 : 0.56);
+      var scale = Math.min(1, maxW / w, maxH / h);
+      var cw = Math.max(1, Math.round(w*scale)), ch = Math.max(1, Math.round(h*scale));
+      var canvas = document.createElement('canvas'); canvas.width=cw; canvas.height=ch;
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(im,0,0,cw,ch);
+
+      // edge-detected holographic render. For images pulled from an
+      // external search result (no CORS headers) the canvas becomes
+      // "tainted" and pixel reads throw — in that case we fall back to
+      // displaying the raw image with a CSS-only cyan tint instead.
+      var holoUrl = null, rawFallback = false;
+      try{
+        var srcData = ctx.getImageData(0,0,cw,ch);
+        var gray = new Float32Array(cw*ch);
+        for(var p=0;p<cw*ch;p++){
+          gray[p] = 0.299*srcData.data[p*4] + 0.587*srcData.data[p*4+1] + 0.114*srcData.data[p*4+2];
+        }
+        var out = ctx.createImageData(cw,ch);
+        var gxK=[-1,0,1,-2,0,2,-1,0,1], gyK=[-1,-2,-1,0,0,0,1,2,1];
+        for(var y=1;y<ch-1;y++){
+          for(var x=1;x<cw-1;x++){
+            var gx=0, gy=0, k=0;
+            for(var j=-1;j<=1;j++){
+              for(var i2=-1;i2<=1;i2++){
+                var v = gray[(y+j)*cw+(x+i2)];
+                gx += v*gxK[k]; gy += v*gyK[k]; k++;
+              }
+            }
+            var mag = Math.sqrt(gx*gx+gy*gy);
+            var edge = Math.min(255, mag*0.55);
+            var base = gray[y*cw+x]*0.08;
+            var idx = (y*cw+x)*4;
+            var lum = Math.min(255, edge + base);
+            out.data[idx]   = lum*0.20;
+            out.data[idx+1] = lum*0.75 + edge*0.1;
+            out.data[idx+2] = lum;
+            out.data[idx+3] = Math.min(255, edge*1.5 + base*0.6);
+          }
+        }
+        ctx.putImageData(out,0,0);
+        holoUrl = canvas.toDataURL('image/png');
+      }catch(pixelErr){
+        rawFallback = true;
+      }
+
+      els.imgWrap.innerHTML = '';
+      els.imgWrap.style.width = cw + 'px';
+      els.imgWrap.style.height = ch + 'px';
+
+      // ambient blurred glow behind the volumetric stack
+      var glow = document.createElement('div');
+      glow.className = 'holo-glow' + (rawFallback ? ' raw' : '');
+      glow.style.backgroundImage = 'url(' + (rawFallback ? src : holoUrl) + ')';
+      els.imgWrap.appendChild(glow);
+
+      // build the object as a stack of thin horizontal slices, each pushed to a
+      // different depth so it reads as a solid volumetric hologram when rotated,
+      // instead of a flat photo tilting in place
+      var SLICES = Math.max(10, Math.min(22, Math.round(ch/26)));
+      var DEPTH_RANGE = 46;
+      state.holoSlices = [];
+      for(var i=0;i<SLICES;i++){
+        var top = Math.round(i * ch / SLICES);
+        var bottom = Math.round((i+1) * ch / SLICES);
+        var sh = Math.max(1, bottom - top);
+        var bulge = Math.sin(((i+0.5)/SLICES) * Math.PI) * DEPTH_RANGE;
+        var slice = document.createElement('div');
+        slice.className = 'holo-slice' + (rawFallback ? ' raw' : '');
+        slice.style.top = top + 'px';
+        slice.style.width = cw + 'px';
+        slice.style.height = sh + 'px';
+        slice.style.backgroundImage = 'url(' + (rawFallback ? src : holoUrl) + ')';
+        slice.style.backgroundPosition = '0 -' + top + 'px';
+        slice.style.backgroundSize = cw + 'px ' + ch + 'px';
+        slice.style.opacity = (0.78 + 0.22 * Math.sin((i/SLICES) * Math.PI)).toFixed(2);
+        slice.style.transform = 'translateZ(' + bulge.toFixed(1) + 'px)';
+        els.imgWrap.appendChild(slice);
+        state.holoSlices.push(slice);
+      }
+    };
+    im.src = src;
+  }
+
+  function clearAnalysis(){
+    state.parts = []; state.selected = -1; state.exploded = false;
+    els.svg.innerHTML = ''; 
+    document.querySelectorAll('.label').forEach(function(l){ l.remove(); });
+    els.explodeBtn.disabled = true; els.explodeBtn.classList.remove('active'); els.explodeBtn.textContent='EXPLODE VIEW';
+    els.partsList.innerHTML = '— scanning —';
+    els.overview.textContent = 'Scanning...';
+    els.matterPanel.classList.add('hidden'); els.matterBody.innerHTML = '';
+    els.personPhotoWrap.hidden = true; els.personPhoto.removeAttribute('src'); els.personPhotoStatus.textContent = '';
+    els.personWikiLink.hidden = true; els.personWikiLink.removeAttribute('href');
+    els.answerImages.innerHTML = ''; els.answerVideo.innerHTML = ''; els.answerText.textContent = ''; els.answerQuery.textContent = '';
+    els.detailName.textContent=''; els.detailBody.textContent='Select a component to view its schematic detail.';
+  }
+
+  function resizeImageForApi(dataUrl, cb){
+    var im = new Image();
+    im.onload = function(){
+      var maxDim = 1024;
+      var w = im.width, h = im.height;
+      var scale = Math.min(1, maxDim / Math.max(w,h));
+      var cw = Math.round(w*scale), ch = Math.round(h*scale);
+      var c = document.createElement('canvas'); c.width=cw; c.height=ch;
+      c.getContext('2d').drawImage(im,0,0,cw,ch);
+      cb(c.toDataURL('image/jpeg',0.85));
+    };
+    im.onerror = function(){ cb(dataUrl); };
+    im.src = dataUrl;
+  }
+
+  var PARTS_PROMPT = 'You are examining a photo. First decide: does it show ONE real, identifiable human being (a celebrity, politician, athlete, musician, business leader, historical figure, or other named/identifiable public figure) — as opposed to a generic object, product, vehicle, animal, plant, food, scene, or an unidentifiable/anonymous/fictional person? ' +
+    'If it DOES show a real identifiable person: use web search to verify who they are, then respond with ONLY this exact JSON schema, no markdown fences, no extra commentary: {"is_real_person": true, "person_name": string, "person_summary": string (2-4 neutral, factual, Wikipedia-style sentences — no speculation, no fabricated details), "wikipedia_url": string (their Wikipedia article URL if one exists, else empty string)}. Never provide a component, material, or schematic breakdown for a real person under any circumstances. ' +
+    'If it does NOT show a real identifiable person: respond with ONLY this exact JSON schema, no markdown fences, no extra commentary: {"is_real_person": false, "object_name": string, "overview": string (max 2 sentences, plain technical tone), "parts": [{"name": string (short, max 4 words), "x": number 0-100 (horizontal percent position of this component within the image), "y": number 0-100 (vertical percent position), "depth": number 0-100 (0 = nearest visible surface facing the camera, 100 = farthest/most recessed point), "function": string (1 short sentence, what this part does), "material": string (likely material or spec, max 4 words)}]}. Include between 5 and 9 real, visually distinguishable components. Estimate x/y/depth as accurately as possible based on where each component actually appears in the image.';
+
+  function analyzeImage(dataUrl){
+    setStatus('SCANNING'); els.scanStatus.textContent = 'ANALYZING IMAGE...';
+    resizeImageForApi(dataUrl, function(resized){
+      var parts = resized.split(',');
+      var meta = parts[0]; var b64 = parts[1];
+      var mediaType = (meta.match(/data:(.*);base64/) || [null,'image/jpeg'])[1];
+      runVisionAnalysis({ type:'image', source:{ type:'base64', media_type:mediaType, data:b64 } }, dataUrl);
+    });
+  }
+
+  // used by the text-search flow: the image lives at a remote URL found via
+  // web search, so we let the API fetch it server-side instead of routing
+  // it through a local canvas (which would often be CORS-blocked anyway).
+  function analyzeImageByUrl(url){
+    setStatus('SCANNING'); els.scanStatus.textContent = 'ANALYZING IMAGE...';
+    runVisionAnalysis({ type:'image', source:{ type:'url', url:url } }, url);
+  }
+
+  function runVisionAnalysis(imageContent, rawSrc){
+    callClaude({
+      maxTokens: 1500,
+      tools: WEB_SEARCH_TOOL,
+      content: [ imageContent, { type:'text', text: PARTS_PROMPT } ]
+    }, function(err, parsed){
+      if(err){
+        setStatus('SCAN FAILED');
+        els.scanStatus.textContent = '';
+        var msg = friendlyApiError(err, 'SCAN');
+        els.overview.textContent = msg;
+        els.partsList.innerHTML = '<span style="color:var(--red)">NO DATA</span>';
+        showError(msg.length > 70 ? msg.slice(0,70)+'…' : msg);
+        speakNarration('Scan failed. Unable to identify the object.');
+        resetSearchButtons();
+        return;
+      }
+      if(parsed.is_real_person){
+        onPersonPhotoAnalysis(parsed, rawSrc);
+        resetSearchButtons();
+        return;
+      }
+      if(!parsed.parts || !parsed.parts.length){
+        setStatus('SCAN FAILED');
+        els.scanStatus.textContent = '';
+        var msg2 = friendlyApiError({ message:'NO_PARTS' });
+        els.overview.textContent = msg2;
+        els.partsList.innerHTML = '<span style="color:var(--red)">NO DATA</span>';
+        showError(msg2);
+        speakNarration('Scan failed. Unable to identify the object.');
+        resetSearchButtons();
+        return;
+      }
+      onAnalysisSuccess(parsed);
+      resetSearchButtons();
+    });
+  }
+
+  function onAnalysisSuccess(parsed){
+    setStatus('SCAN COMPLETE');
+    els.scanStatus.textContent = '';
+    els.overview.innerHTML = '<b>' + escapeHtml(parsed.object_name || 'UNKNOWN OBJECT').toUpperCase() + '</b><br>' + escapeHtml(parsed.overview || '') +
+      (state.archiveNote ? '<br><span style="color:var(--blue-dim)">FROM ARCHIVE: ' + escapeHtml(state.archiveNote) + '</span>' : '');
+    els.matterBody.innerHTML = '<b>' + escapeHtml((parsed.object_name||'UNKNOWN OBJECT').toUpperCase()) + '</b><br>' + escapeHtml(parsed.overview || '');
+    els.matterPanel.classList.remove('hidden');
+    speakNarration(buildScanNarration(parsed));
+    state.parts = parsed.parts.map(function(p,i){
+      return { id:i, name:p.name||('PART '+(i+1)), x:clampNum(p.x,0,100), y:clampNum(p.y,0,100),
+               z:clampNum(p.depth,0,100), fn:p.function||'', material:p.material||'' };
+    });
+    renderPartsList();
+    if(state.mode === 'model'){
+      // a real rotating 3D mesh has its own true geometry — the flat
+      // percent-position marker overlay (built for 2D photos) can't track
+      // it, so components stay as a plain clickable list with no explode view
+      els.explodeBtn.disabled = true;
+    } else {
+      els.explodeBtn.disabled = false;
+      renderMarkers();
+      setTimeout(function(){
+        state.exploded = true;
+        els.explodeBtn.classList.add('active');
+        els.explodeBtn.textContent = 'ASSEMBLE VIEW';
+        animateExplode();
+      }, 700);
+    }
+  }
+
+  // a real, identifiable person was detected in the scanned photo itself —
+  // show that exact photo plainly (no edge-detection tint, no glow, no scan
+  // rings/sweep) plus a short factual summary. No component/material
+  // breakdown is ever produced for a real person.
+  function onPersonPhotoAnalysis(parsed, rawSrc){
+    setStatus('IDENTIFIED'); els.scanStatus.textContent = '';
+    showViewportMode('person');
+    var name = (parsed.person_name || 'Unidentified person').trim();
+    var summary = parsed.person_summary || 'No summary available.';
+    els.personName.textContent = name.toUpperCase();
+    els.personSummary.textContent = summary;
+    els.overview.innerHTML = '<b>' + escapeHtml(name.toUpperCase()) + '</b><br>REAL PERSON — FACTUAL MODE (NO COMPONENT SCAN)';
+    els.partsHeader.textContent = 'COMPONENTS';
+    els.partsList.innerHTML = '<span style="color:var(--blue-dim)">— disabled for real people —</span>';
+    els.detailName.textContent = '';
+    els.detailBody.textContent = 'Component-level schematic analysis is not performed on real people.';
+    els.explodeBtn.disabled = true;
+    setPersonWikiLink(parsed.wikipedia_url, name);
+    speakNarration('Identity confirmed. ' + name + '. Schematic analysis is disabled for real individuals. ' + summary);
+
+    els.personPhoto.src = rawSrc;
+    els.personPhotoWrap.hidden = false;
+    els.personPhotoStatus.textContent = '';
+  }
+
+  function setPersonWikiLink(url, name){
+    if(url){
+      els.personWikiLink.href = url;
+      els.personWikiLink.textContent = 'VIEW ON WIKIPEDIA →';
+      els.personWikiLink.hidden = false;
+    } else {
+      els.personWikiLink.removeAttribute('href');
+      els.personWikiLink.hidden = true;
+    }
+  }
+
+  // ---------- text search mode ----------
+  // One query goes to one classify+route call: is this a real named person,
+  // or a generic thing? Real people never get the component/parts breakdown
+  // treatment — they get a short factual summary instead ("true form").
+  // Generic things get a web-found reference photo run through the normal
+  // hologram + component-scan pipeline, same as an upload.
+  var WEB_SEARCH_TOOL = [{ type:'web_search_20250305', name:'web_search' }];
+
+  function resetSearchButtons(){
+    els.searchBtn.disabled = false; els.searchBtn.textContent = 'SEARCH';
+    els.uploadBtn.disabled = false;
+  }
+
+  function handleSearchError(err){
+    setStatus('SEARCH FAILED'); els.scanStatus.textContent = '';
+    showViewportMode('empty');
+    var msg = friendlyApiError(err, 'SEARCH');
+    els.overview.textContent = msg;
+    showError(msg.length > 70 ? msg.slice(0,70)+'…' : msg);
+    resetSearchButtons();
+  }
+
+  els.searchForm.addEventListener('submit', function(e){
+    e.preventDefault();
+    var q = els.searchInput.value.trim();
+    if(!q) return;
+    performSearch(q);
+  });
+
+  function performSearch(query){
+    stopNarration();
+    els.searchBtn.disabled = true; els.searchBtn.textContent = 'WORKING...';
+    els.uploadBtn.disabled = true;
+    els.resetBtn.disabled = false;
+    showViewportMode('loading');
+    state.mode = 'image';
+    state.archiveNote = null;
+    teardownModel();
+    clearAnalysis();
+    setStatus('IDENTIFYING'); els.scanStatus.textContent = 'INTERPRETING QUERY...';
+
+    var routePrompt = 'A user submitted this query to a search engine app: "' + query.replace(/"/g,'\\"') + '". Classify it into exactly one category: ' +
+      '"person" — the query names or clearly refers to ONE real, identifiable individual human being (celebrity, politician, athlete, musician, business leader, historical figure, or other named public figure). ' +
+      '"object" — the query names a generic physical object, animal, vehicle, plant, food, fictional/cartoon character, brand, or place that is best shown as a single reference photo. ' +
+      '"general" — anything else: a factual question, how/why/what/when query, definition, comparison, or current-events question that is better answered directly than shown as one photo. ' +
+      'For "person": use web search to confirm identity, then write a short neutral factual 2-4 sentence Wikipedia-style summary (no speculation, no fabricated details), and give their Wikipedia article URL if one exists (else empty string). ' +
+      'For "object": produce a clean short search phrase (max 6 words) suitable for finding one clear representative photograph of it. ' +
+      'For "general": use web search if it helps, then answer the question directly and clearly in 2-5 sentences. If the question can be answered "yes" or "no", start the answer with "Yes — " or "No — " and then explain why, whichever way the answer goes — always give the explanation, never just the yes/no on its own. Also give a short image search phrase (max 6 words) and a short video search phrase (max 6 words) relevant to the topic. ' +
+      'Respond with ONLY valid JSON, no markdown fences, matching exactly this schema, leaving irrelevant fields as empty strings: {"category": "person"|"object"|"general", "person_name": string, "person_summary": string, "wikipedia_url": string, "search_subject": string, "answer": string, "image_query": string, "video_query": string}';
+
+    callClaude({ maxTokens:1200, tools: WEB_SEARCH_TOOL, content:[{ type:'text', text:routePrompt }] }, function(err, parsed){
+      if(err){ handleSearchError(err); return; }
+      if(parsed.category === 'person'){
+        finishPersonResult(query, parsed);
+      } else if(parsed.category === 'general'){
+        answerGeneralQuery(query, parsed);
+      } else {
+        var subject = (parsed.search_subject || '').trim() || query;
+        searchAndScanObject(subject);
+      }
+    });
+  }
+
+  function finishPersonResult(query, parsed){
+    setStatus('IDENTIFIED'); els.scanStatus.textContent = '';
+    showViewportMode('person');
+    var name = (parsed.person_name || query).trim();
+    var summary = parsed.person_summary || 'No summary available.';
+    els.personName.textContent = name.toUpperCase();
+    els.personSummary.textContent = summary;
+    els.overview.innerHTML = '<b>' + escapeHtml(name.toUpperCase()) + '</b><br>REAL PERSON — FACTUAL MODE (NO COMPONENT SCAN)';
+    els.partsHeader.textContent = 'COMPONENTS';
+    els.partsList.innerHTML = '<span style="color:var(--blue-dim)">— disabled for real people —</span>';
+    els.detailName.textContent = '';
+    els.detailBody.textContent = 'Component-level schematic analysis is not performed on real people.';
+    els.explodeBtn.disabled = true;
+    setPersonWikiLink(parsed.wikipedia_url, name);
+    speakNarration('Identity confirmed. ' + name + '. Schematic analysis is disabled for real individuals. ' + summary);
+    resetSearchButtons();
+
+    // real people get a plain reference photograph — deliberately routed
+    // around buildHologram, so no edge-detection tint, glow, scan rings,
+    // or sweep are ever applied to it; just the photo itself.
+    els.personPhotoWrap.hidden = true;
+    els.personPhoto.removeAttribute('src');
+    els.personPhotoStatus.textContent = 'LOCATING PHOTOGRAPH...';
+    findWebImage(name, function(err, imgParsed){
+      if(err || !imgParsed || !imgParsed.image_url){
+        els.personPhotoStatus.textContent = 'PHOTOGRAPH UNAVAILABLE';
+        return;
+      }
+      var testImg = new Image();
+      testImg.onload = function(){
+        els.personPhoto.src = imgParsed.image_url;
+        els.personPhotoWrap.hidden = false;
+        els.personPhotoStatus.textContent = '';
+      };
+      testImg.onerror = function(){ els.personPhotoStatus.textContent = 'PHOTOGRAPH UNAVAILABLE'; };
+      testImg.src = imgParsed.image_url;
+    });
+  }
+
+  // shared web-image lookup used for both generic-object reference photos
+  // and real-person reference photographs
+  function findWebImage(subject, cb){
+    var findPrompt = 'Search the web for one clear, high quality, unobstructed photograph of: "' + subject.replace(/"/g,'\\"') + '". ' +
+      'Prefer stable, directly-linkable image sources such as Wikipedia/Wikimedia Commons, official press, or educational pages. ' +
+      'Respond with ONLY valid JSON, no markdown fences: {"image_url": string (a direct URL to the image file itself), "object_label": string (clean short name for the subject)}';
+    callClaude({ maxTokens:1000, tools: WEB_SEARCH_TOOL, content:[{ type:'text', text:findPrompt }] }, cb);
+  }
+
+  function searchAndScanObject(subject){
+    setStatus('SEARCHING WEB'); els.scanStatus.textContent = 'LOCATING REFERENCE IMAGE...';
+    findWebImage(subject, function(err, parsed){
+      if(err){ handleSearchError(err); return; }
+      if(!parsed.image_url){ handleSearchError({ message:'NO_IMAGE' }); return; }
+      showViewportMode('image');
+      els.resetBtn.disabled = false;
+      resetTransform();
+      buildHologram(parsed.image_url);
+      analyzeImageByUrl(parsed.image_url);
+    });
+  }
+
+  // ---------- general search-engine answer mode ----------
+  // for queries that aren't a person or a single scannable object: answer
+  // directly like a search engine, then pull in a few supporting images and
+  // one relevant video.
+  function answerGeneralQuery(query, parsed){
+    setStatus('ANSWER FOUND'); els.scanStatus.textContent = '';
+    showViewportMode('answer');
+    els.resetBtn.disabled = false;
+    els.answerQuery.textContent = query;
+    els.answerText.textContent = parsed.answer || 'No answer available.';
+    els.overview.innerHTML = '<b>' + escapeHtml(query.toUpperCase()) + '</b><br>DIRECT ANSWER — SEARCH MODE';
+    els.partsHeader.textContent = 'COMPONENTS';
+    els.partsList.innerHTML = '<span style="color:var(--blue-dim)">— n/a for general queries —</span>';
+    els.detailName.textContent = '';
+    els.detailBody.textContent = 'This query was answered directly; no object was scanned.';
+    els.explodeBtn.disabled = true;
+    speakNarration(parsed.answer || '');
+    resetSearchButtons();
+
+    els.answerImages.innerHTML = '<span class="aloading">LOCATING IMAGES...</span>';
+    els.answerVideo.innerHTML = '<span class="aloading">LOCATING VIDEO...</span>';
+
+    findWebImages((parsed.image_query || '').trim() || query, 3, function(err, urls){
+      els.answerImages.innerHTML = '';
+      if(err || !urls || !urls.length) return;
+      urls.forEach(function(u){
+        var im = document.createElement('img');
+        im.loading = 'lazy';
+        im.onerror = function(){ im.remove(); };
+        im.src = u;
+        els.answerImages.appendChild(im);
+      });
+    });
+
+    findWebVideo((parsed.video_query || '').trim() || query, function(err, video){
+      els.answerVideo.innerHTML = '';
+      if(err || !video || !video.video_url) return;
+      var vid = extractYouTubeId(video.video_url);
+      if(vid){
+        els.answerVideo.innerHTML = '<div class="avideo-title">' + escapeHtml(video.video_title || 'RELATED VIDEO') + '</div>' +
+          '<iframe src="https://www.youtube.com/embed/' + encodeURIComponent(vid) + '" allowfullscreen loading="lazy"></iframe>';
+      } else {
+        var a = document.createElement('a');
+        a.href = video.video_url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+        a.textContent = 'WATCH: ' + (video.video_title || 'RELATED VIDEO');
+        els.answerVideo.appendChild(a);
+      }
+    });
+  }
+
+  function findWebImages(query, count, cb){
+    var prompt = 'Search the web for ' + count + ' different clear, directly-linkable photographs illustrating: "' + query.replace(/"/g,'\\"') + '". Prefer Wikipedia/Wikimedia Commons or other stable direct image file URLs. Respond with ONLY valid JSON, no markdown fences: {"images": [string, ...]} where each string is a direct URL to an image file.';
+    callClaude({ maxTokens:800, tools: WEB_SEARCH_TOOL, content:[{ type:'text', text:prompt }] }, function(err, parsed){
+      if(err) return cb(err);
+      cb(null, (parsed && parsed.images) || []);
+    });
+  }
+
+  function findWebVideo(query, cb){
+    var prompt = 'Search the web for one real, currently-available YouTube video relevant to: "' + query.replace(/"/g,'\\"') + '". Respond with ONLY valid JSON, no markdown fences: {"video_url": string (a real youtube.com or youtu.be watch URL), "video_title": string (short title)}';
+    callClaude({ maxTokens:600, tools: WEB_SEARCH_TOOL, content:[{ type:'text', text:prompt }] }, cb);
+  }
+
+  function extractYouTubeId(url){
+    var m = String(url).match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+    return m ? m[1] : null;
+  }
+
+  function clampNum(n,min,max){ n = Number(n); if(isNaN(n)) n=(min+max)/2; return Math.max(min, Math.min(max,n)); }
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+  function renderPartsList(){
+    els.partsHeader.textContent = 'COMPONENTS (' + state.parts.length + ')';
+    els.partsList.innerHTML = '';
+    state.parts.forEach(function(p,i){
+      var div = document.createElement('div');
+      div.className = 'part-item';
+      div.dataset.idx = i;
+      div.innerHTML = '<span class="idx">' + String(i+1).padStart(2,'0') + '</span>' + escapeHtml(p.name.toUpperCase());
+      div.addEventListener('click', function(){ selectPart(i); });
+      els.partsList.appendChild(div);
+    });
+  }
+
+  // ---------- markers / lines / labels ----------
+  function renderMarkers(){
+    els.svg.setAttribute('viewBox','0 0 100 100');
+    els.svg.setAttribute('preserveAspectRatio','none');
+    els.svg.innerHTML = '';
+    document.querySelectorAll('.label').forEach(function(l){ l.remove(); });
+
+    var leftParts = state.parts.map(function(p,i){return {p:p,i:i};}).filter(function(o){ return o.p.x < 50; }).sort(function(a,b){return a.p.y-b.p.y;});
+    var rightParts = state.parts.map(function(p,i){return {p:p,i:i};}).filter(function(o){ return o.p.x >= 50; }).sort(function(a,b){return a.p.y-b.p.y;});
+
+    function assignAnchors(list, side){
+      var n = list.length; if(n===0) return;
+      list.forEach(function(o,idx){
+        var ly = 10 + (idx+0.5) * (80/n);
+        o.anchorX = side==='left' ? 4 : 96;
+        o.anchorY = ly;
+      });
+    }
+    assignAnchors(leftParts,'left');
+    assignAnchors(rightParts,'right');
+
+    var all = leftParts.concat(rightParts);
+    all.forEach(function(o){
+      var p = o.p, i = o.i;
+      var dx = p.x - 50, dy = p.y - 50;
+      var len = Math.sqrt(dx*dx+dy*dy) || 1;
+      p._ex = p.x + (dx/len) * 20;
+      p._ey = p.y + (dy/len) * 20;
+      p._anchorX = o.anchorX; p._anchorY = o.anchorY;
+
+      var line = document.createElementNS('http://www.w3.org/2000/svg','line');
+      line.setAttribute('class','lline'); line.setAttribute('vector-effect','non-scaling-stroke');
+      line.setAttribute('x1', p.x); line.setAttribute('y1', p.y);
+      line.setAttribute('x2', p.x); line.setAttribute('y2', p.y);
+      line.dataset.idx = i;
+      els.svg.appendChild(line);
+      p._lineEl = line;
+
+      var stub = document.createElementNS('http://www.w3.org/2000/svg','line');
+      stub.setAttribute('class','lline'); stub.setAttribute('vector-effect','non-scaling-stroke');
+      stub.setAttribute('x1', p.x); stub.setAttribute('y1', p.y);
+      stub.setAttribute('x2', o.anchorX); stub.setAttribute('y2', o.anchorY);
+      els.svg.appendChild(stub);
+      p._stubEl = stub;
+
+      var circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      circle.setAttribute('class','marker'); circle.setAttribute('r','1.1');
+      circle.setAttribute('cx', p.x); circle.setAttribute('cy', p.y);
+      els.svg.appendChild(circle);
+      p._markerEl = circle;
+
+      var label = document.createElement('div');
+      var side = o.anchorX < 50 ? 'left' : 'right';
+      label.className = 'label ' + side;
+      label.textContent = String(i+1).padStart(2,'0') + ' ' + p.name.toUpperCase();
+      label.style.left = o.anchorX + '%';
+      label.style.top = o.anchorY + '%';
+      label.addEventListener('click', function(){ selectPart(i); });
+      els.stage.appendChild(label);
+      p._labelEl = label;
+      p._labelSide = side;
+    });
+    positionAll();
+    updateLabelBillboards();
+  }
+
+  function positionAll(){
+    state.parts.forEach(function(p){
+      var tx = state.exploded ? p._ex : p.x;
+      var ty = state.exploded ? p._ey : p.y;
+      if(p._lineEl){ p._lineEl.setAttribute('x2', tx); p._lineEl.setAttribute('y2', ty); }
+      if(p._markerEl){ p._markerEl.setAttribute('cx', tx); p._markerEl.setAttribute('cy', ty); }
+      if(p._stubEl){ p._stubEl.setAttribute('x1', tx); p._stubEl.setAttribute('y1', ty); }
+    });
+  }
+
+  // depth (0=front,100=back) -> px offset along the object's own depth axis
+  function depthToZ(z){ return (50 - (z==null?50:z)) / 50 * 46; }
+
+  // labels are children of the rotating #stage; without this they'd rotate
+  // edge-on and become unreadable, so we counter-rotate each one to keep it
+  // facing the camera, and float it forward so it never gets buried in the
+  // hologram slices as the object turns
+  function updateLabelBillboards(){
+    state.parts.forEach(function(p){
+      if(!p._labelEl) return;
+      var baseTranslate = p._labelSide === 'left' ? 'translate(calc(-100% - 6px), -50%)' : 'translate(6px, -50%)';
+      var forwardZ = 55 + depthToZ(p.z) * 0.4 + (state.exploded ? 45 : 0);
+      p._labelEl.style.transform = baseTranslate +
+        ' rotateY(' + (-state.rotY) + 'deg) rotateX(' + (-state.rotX) + 'deg) translateZ(' + forwardZ.toFixed(1) + 'px)';
+    });
+  }
+
+  function selectPart(i){
+    state.selected = i;
+    document.querySelectorAll('.part-item').forEach(function(el){ el.classList.toggle('active', Number(el.dataset.idx)===i); });
+    document.querySelectorAll('.label').forEach(function(el,idx){});
+    state.parts.forEach(function(p,idx){
+      if(p._labelEl) p._labelEl.classList.toggle('sel', idx===i);
+      if(p._markerEl) p._markerEl.classList.toggle('sel', idx===i);
+    });
+    var p = state.parts[i];
+    if(!p) return;
+    els.detailName.textContent = String(i+1).padStart(2,'0') + ' — ' + p.name.toUpperCase();
+    typewrite(els.detailBody, '<b>FUNCTION:</b> ' + escapeHtml(p.fn) + '<br><br><b>MATERIAL:</b> ' + escapeHtml(p.material));
+    var li = els.partsList.querySelector('.part-item[data-idx="'+i+'"]');
+    if(li) li.scrollIntoView({block:'nearest'});
+  }
+
+  function typewrite(el, html){
+    el.innerHTML = html;
+    el.style.opacity = 0.2;
+    requestAnimationFrame(function(){ el.style.transition='opacity .25s'; el.style.opacity=1; });
+  }
+
+  function cycleSelected(dir){
+    if(!state.parts.length) return;
+    var n = state.parts.length;
+    var next = state.selected < 0 ? 0 : (state.selected + dir + n) % n;
+    selectPart(next);
+  }
+
+  // ---------- explode toggle ----------
+  els.explodeBtn.addEventListener('click', function(){
+    state.exploded = !state.exploded;
+    els.explodeBtn.classList.toggle('active', state.exploded);
+    els.explodeBtn.textContent = state.exploded ? 'ASSEMBLE VIEW' : 'EXPLODE VIEW';
+    animateExplode();
+    updateLabelBillboards();
+  });
+  function animateExplode(){
+    var dur = 480; var t0 = performance.now();
+    var from = {}; 
+    state.parts.forEach(function(p){ from[p.id] = { x:Number(p._lineEl.getAttribute('x2')), y:Number(p._lineEl.getAttribute('y2')) }; });
+    function step(now){
+      var t = Math.min(1,(now-t0)/dur);
+      var e = 1 - Math.pow(1-t,3);
+      state.parts.forEach(function(p){
+        var tx = state.exploded ? p._ex : p.x;
+        var ty = state.exploded ? p._ey : p.y;
+        var cx = from[p.id].x + (tx-from[p.id].x)*e;
+        var cy = from[p.id].y + (ty-from[p.id].y)*e;
+        p._lineEl.setAttribute('x2',cx); p._lineEl.setAttribute('y2',cy);
+        p._markerEl.setAttribute('cx',cx); p._markerEl.setAttribute('cy',cy);
+        p._stubEl.setAttribute('x1',cx); p._stubEl.setAttribute('y1',cy);
+      });
+      if(t<1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  // ---------- reset ----------
+  els.resetBtn.addEventListener('click', function(){
+    stopNarration();
+    showViewportMode('empty');
+    els.resetBtn.disabled = true;
+    els.fileInput.value = '';
+    els.imgWrap.innerHTML = '';
+    els.searchInput.value = '';
+    resetSearchButtons();
+    clearAnalysis();
+    state.mode = 'image';
+    state.archiveNote = null;
+    teardownModel();
+    resetTransform();
+    setStatus('STANDBY');
+  });
+
+  // ---------- drag rotate / zoom / swipe ----------
+  function applyTransform(){
+    if(state.mode === 'model' && modelState.renderer){
+      // real 3D mode: the mesh itself rotates inside the Three.js scene, so
+      // the CSS stage/zoom layer stay untransformed (no double rotation)
+      els.stage.style.transform = 'none';
+      document.getElementById('zoomLayer').style.transform = 'none';
+      modelState.group.rotation.y = state.rotY * Math.PI / 180;
+      modelState.group.rotation.x = clampNum(state.rotX, -70, 70) * Math.PI / 180;
+      modelState.camera.position.z = modelState.baseDist / clampNum(state.scale, 0.4, 3);
+      modelState.camera.lookAt(0, 0, 0);
+      modelState.renderer.render(modelState.scene, modelState.camera);
+    } else {
+      els.stage.style.transform = 'perspective(820px) rotateX('+state.rotX+'deg) rotateY('+state.rotY+'deg)';
+      document.getElementById('zoomLayer').style.transform = 'scale('+state.scale+')';
+    }
+    updateLabelBillboards();
+  }
+  function resetTransform(){ state.rotX=0; state.rotY=0; state.scale=1; state.velY=0; state.velX=0; applyTransform(); }
+
+  els.stage.addEventListener('pointerdown', function(e){
+    state.dragging = true; state.dragMoved=false;
+    state.dragStart = { x:e.clientX, y:e.clientY, t:performance.now(), rotX:state.rotX, rotY:state.rotY };
+    state.lastMove = { x:e.clientX, y:e.clientY, t:performance.now() };
+    state.velX = 0; state.velY = 0;
+    els.stage.classList.add('dragging');
+    els.stage.setPointerCapture(e.pointerId);
+  });
+  els.stage.addEventListener('pointermove', function(e){
+    if(!state.dragging) return;
+    var dx = e.clientX - state.dragStart.x, dy = e.clientY - state.dragStart.y;
+    if(Math.abs(dx)>4 || Math.abs(dy)>4) state.dragMoved = true;
+    state.rotY = state.dragStart.rotY + dx*0.4;
+    state.rotX = clampNum(state.dragStart.rotX - dy*0.4, -70, 70);
+    var now = performance.now();
+    var dt = Math.max(1, now - state.lastMove.t);
+    state.velY = (e.clientX - state.lastMove.x) * 0.4 / dt * 16;
+    state.velX = -(e.clientY - state.lastMove.y) * 0.4 / dt * 16;
+    state.lastMove = { x:e.clientX, y:e.clientY, t:now };
+    applyTransform();
+  });
+  els.stage.addEventListener('pointerup', function(e){
+    if(!state.dragging) return;
+    state.dragging = false; els.stage.classList.remove('dragging');
+    var dt = performance.now() - state.dragStart.t;
+    var dx = e.clientX - state.dragStart.x, dy = e.clientY - state.dragStart.y;
+    if(dt < 350 && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)*1.5){
+      cycleSelected(dx < 0 ? 1 : -1);
+    }
+    state.idleResume = performance.now() + 1400;
+  });
+
+  // continuous render loop: momentum after release, gentle idle spin, and gesture-driven rotation
+  var IDLE_SPEED = 0.045;
+  function renderLoop(){
+    if(!state.dragging){
+      if(Math.abs(state.velY) > 0.002 || Math.abs(state.velX) > 0.002){
+        state.rotY += state.velY;
+        state.rotX = clampNum(state.rotX + state.velX, -70, 70);
+        state.velY *= 0.94; state.velX *= 0.94;
+        applyTransform();
+      } else if(!state.gestureOn && (!state.idleResume || performance.now() > state.idleResume)){
+        state.rotY += IDLE_SPEED;
+        applyTransform();
+      }
+    }
+    requestAnimationFrame(renderLoop);
+  }
+  requestAnimationFrame(renderLoop);
+
+  els.viewport.addEventListener('wheel', function(e){
+    if(els.zoomLayer.style.display==='none') return;
+    e.preventDefault();
+    state.scale = clampNum(state.scale - e.deltaY*0.0012, 0.6, 2.4);
+    applyTransform();
+  }, {passive:false});
+
+  var pinchDist = null;
+  els.viewport.addEventListener('touchmove', function(e){
+    if(e.touches.length===2){
+      var dx = e.touches[0].clientX - e.touches[1].clientX;
+      var dy = e.touches[0].clientY - e.touches[1].clientY;
+      var dist = Math.sqrt(dx*dx+dy*dy);
+      if(pinchDist!=null){
+        state.scale = clampNum(state.scale + (dist-pinchDist)*0.003, 0.6, 2.4);
+        applyTransform();
+      }
+      pinchDist = dist;
+      e.preventDefault();
+    }
+  }, {passive:false});
+  els.viewport.addEventListener('touchend', function(){ pinchDist=null; });
+
+  // ---------- experimental camera gesture ----------
+  var camState = {
+    active:false, stream:null, prevFrame:null,
+    lastTrigger:0, cx:null, cy:null,
+    smoothRotY:null, smoothRotX:null, smoothScale:null,
+    idleFrames:0
+  };
+  els.gestureBtn.addEventListener('click', function(){
+    if(camState.active){ stopGesture(); return; }
+    startGesture();
+  });
+
+  function startGesture(){
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      showError('CAMERA API UNAVAILABLE IN THIS BROWSER'); return;
+    }
+    els.gestureBtn.textContent = 'CONNECTING CAMERA...';
+    navigator.mediaDevices.getUserMedia({ video:{ facingMode:'user', width:160, height:120 }, audio:false })
+      .then(function(stream){
+        camState.stream = stream;
+        els.camFeed.srcObject = stream;
+        els.camFeed.play();
+        camState.active = true;
+        els.gestureBtn.textContent = 'DISABLE HAND GESTURE';
+        els.gestureBtn.classList.add('active');
+        els.camPreview.hidden = false;
+        els.camCanvas.width = 80; els.camCanvas.height = 60;
+        requestAnimationFrame(gestureLoop);
+      })
+      .catch(function(err){
+        console.error(err);
+        els.gestureBtn.textContent = 'ENABLE HAND GESTURE';
+        showError('CAMERA UNAVAILABLE — OPEN THIS FILE DIRECTLY IN A BROWSER TAB FOR CAMERA ACCESS, OR USE DRAG / SWIPE CONTROLS');
+      });
+  }
+  function stopGesture(){
+    camState.active = false;
+    if(camState.stream){ camState.stream.getTracks().forEach(function(t){ t.stop(); }); }
+    els.camPreview.hidden = true;
+    els.gestureBtn.textContent = 'ENABLE HAND GESTURE';
+    els.gestureBtn.classList.remove('active');
+    camState.prevFrame = null; camState.cx = null; camState.cy = null;
+    camState.smoothRotY = null; camState.smoothRotX = null; camState.smoothScale = null;
+    state.gestureOn = false;
+    state.idleResume = performance.now() + 800;
+  }
+
+  function gestureLoop(){
+    if(!camState.active) return;
+    var w = els.camCanvas.width, h = els.camCanvas.height;
+    var ctx = els.camCanvas.getContext('2d');
+    try{
+      ctx.drawImage(els.camFeed, 0, 0, w, h);
+      var frame = ctx.getImageData(0,0,w,h);
+      var pctx = els.camPreviewCanvas.getContext('2d');
+      pctx.drawImage(els.camCanvas,0,0,els.camPreviewCanvas.width, els.camPreviewCanvas.height);
+
+      // track the hand by skin-tone colour rather than frame-to-frame motion,
+      // so a held (stationary) hand keeps registering instead of only working
+      // while it's actively moving
+      var d = frame.data;
+      var sumX=0, sumY=0, count=0;
+      for(var i=0;i<d.length;i+=4){
+        var r=d[i], g=d[i+1], b=d[i+2];
+        var mx = Math.max(r,g,b), mn = Math.min(r,g,b);
+        var isSkin = r>60 && g>30 && b>15 && (mx-mn)>12 && (r-g)>10 && r>b;
+        if(isSkin){
+          var pix = i/4; var px = pix % w; var py = (pix / w)|0;
+          sumX += px; sumY += py; count++;
+        }
+      }
+      var areaRatio = count / (w*h);
+      if(count > (w*h*0.02)){
+        state.gestureOn = true;
+        var cx = sumX / count, cy = sumY / count;
+
+        // continuous mapping: hand left-right across frame -> full 360 spin
+        var targetRotY = (cx / w - 0.5) * 360;
+        var targetRotX = (0.5 - cy / h) * 40;
+        camState.smoothRotY = camState.smoothRotY == null ? targetRotY : camState.smoothRotY + (targetRotY - camState.smoothRotY) * 0.18;
+        camState.smoothRotX = camState.smoothRotX == null ? targetRotX : camState.smoothRotX + (targetRotX - camState.smoothRotX) * 0.18;
+        state.rotY = camState.smoothRotY;
+        state.rotX = clampNum(camState.smoothRotX, -40, 40);
+
+        // hand size (closer/open hand) -> zoom
+        var targetScale = clampNum(0.75 + areaRatio * 7, 0.7, 2.3);
+        camState.smoothScale = camState.smoothScale == null ? targetScale : camState.smoothScale + (targetScale - camState.smoothScale) * 0.15;
+        state.scale = camState.smoothScale;
+        applyTransform();
+
+        // fast vertical flick -> cycle part
+        if(camState.cy != null){
+          var dy = cy - camState.cy;
+          var now = performance.now();
+          if(Math.abs(dy) > 8 && (now - camState.lastTrigger) > 650){
+            cycleSelected(dy < 0 ? -1 : 1);
+            camState.lastTrigger = now;
+            flashCamLabel(dy < 0 ? 'PART ^' : 'PART v');
+          }
+        }
+        camState.cy = cy;
+        camState.idleFrames = 0;
+      } else {
+        camState.idleFrames = (camState.idleFrames||0) + 1;
+        if(camState.idleFrames > 45){ state.gestureOn = false; camState.cy = null; }
+      }
+    }catch(e){ /* frame not ready yet */ }
+    requestAnimationFrame(gestureLoop);
+  }
+  function flashCamLabel(txt){
+    var l = els.camPreview.querySelector('.lbl');
+    var orig = 'GESTURE CAM';
+    l.textContent = txt;
+    setTimeout(function(){ l.textContent = orig; }, 500);
+  }
+
+  applyTransform();
+})();
+</script>
+</body>
+</html>
